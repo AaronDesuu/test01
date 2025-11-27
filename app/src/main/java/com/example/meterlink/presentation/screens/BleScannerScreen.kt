@@ -2,7 +2,6 @@ package com.example.meterlink.presentation.screens
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
@@ -13,11 +12,29 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -32,7 +49,9 @@ fun BleScannerScreen(
 ) {
     val context = LocalContext.current
     var isScanning by remember { mutableStateOf(false) }
-    var devices by remember { mutableStateOf<List<BluetoothDevice>>(emptyList()) }
+    var eMeterDevices by remember { mutableStateOf<List<BluetoothDevice>>(emptyList()) }
+    var unknownDevices by remember { mutableStateOf<List<BluetoothDevice>>(emptyList()) }
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
     var hasPermissions by remember { mutableStateOf(checkPermissions(context)) }
 
     val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -48,8 +67,17 @@ fun BleScannerScreen(
         object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device
-                if (!devices.contains(device)) {
-                    devices = devices + device
+                val deviceName = device.name
+
+                if (deviceName != null && (deviceName.contains("WF"))) {
+                    if (!eMeterDevices.contains(device)) {
+                        eMeterDevices = eMeterDevices + device
+                    }
+                } else {
+                    // All other devices go to Unknown
+                    if (!unknownDevices.contains(device)) {
+                        unknownDevices = unknownDevices + device
+                    }
                 }
             }
         }
@@ -61,7 +89,8 @@ fun BleScannerScreen(
             return
         }
 
-        devices = emptyList()
+        eMeterDevices = emptyList()
+        unknownDevices = emptyList()
         isScanning = true
         bluetoothAdapter.bluetoothLeScanner.startScan(scanCallback)
     }
@@ -112,8 +141,25 @@ fun BleScannerScreen(
                 )
             }
 
+            // Tab Row
+            PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
+                Tab(
+                    selected = selectedTabIndex == 0,
+                    onClick = { selectedTabIndex = 0 },
+                    text = { Text("E-Meters (${eMeterDevices.size})") }
+                )
+                Tab(
+                    selected = selectedTabIndex == 1,
+                    onClick = { selectedTabIndex = 1 },
+                    text = { Text("Unknown (${unknownDevices.size})") }
+                )
+            }
+
+            // Device List based on selected tab
+            val displayDevices = if (selectedTabIndex == 0) eMeterDevices else unknownDevices
+
             LazyColumn {
-                items(devices) { device ->
+                items(displayDevices) { device ->
                     DeviceListItem(device) {
                         stopScan()
                         onDeviceSelected(device)
@@ -143,7 +189,6 @@ fun DeviceListItem(device: BluetoothDevice, onClick: () -> Unit) {
                 text = device.address,
                 style = MaterialTheme.typography.bodySmall
             )
-            // Show device type
             Text(
                 text = "Type: ${device.type}",
                 style = MaterialTheme.typography.bodySmall,
@@ -152,6 +197,7 @@ fun DeviceListItem(device: BluetoothDevice, onClick: () -> Unit) {
         }
     }
 }
+
 private fun checkPermissions(context: Context): Boolean {
     return getRequiredPermissions().all { permission ->
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
