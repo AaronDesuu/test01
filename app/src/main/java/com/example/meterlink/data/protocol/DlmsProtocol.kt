@@ -7,6 +7,7 @@ import javax.crypto.spec.SecretKeySpec
 
 class DlmsProtocol {
     private val TAG = "DlmsProtocol"
+    private val hdlc = HdlcLayer()
 
     // Security state
     private var svChallenge: ByteArray? = null
@@ -21,6 +22,11 @@ class DlmsProtocol {
     private var currentMode: Byte = 0
     private var currentAtr: Byte = 0
     private var currentSel: Byte = 0
+    private var currentRank: Int = 4  // PUBLIC by default
+
+    // Keys
+    private var globalKey: ByteArray? = null
+    private var dedicatedKey: ByteArray? = null
 
     // Static protocol bytes
     companion object {
@@ -28,6 +34,15 @@ class DlmsProtocol {
         private val SET_REQUEST = byteArrayOf(0xc1.toByte(), 0x01, 0xc1.toByte())
         private val ACTION_REQUEST = byteArrayOf(0xc3.toByte(), 0x01, 0xc1.toByte())
         private val GET_NEXT_REQUEST = byteArrayOf(0xc0.toByte(), 0x02, 0x00, 0x00, 0x00, 0x00)
+        private val AARQ_TAG = byteArrayOf(0x60.toByte())
+        private val RLRQ_TAG = byteArrayOf(0x62.toByte())
+
+        // User ranks
+        const val RANK_SUPER = 0
+        const val RANK_ADMIN = 1
+        const val RANK_POWER = 2
+        const val RANK_READER = 3
+        const val RANK_PUBLIC = 4
     }
 
     /**
@@ -251,4 +266,111 @@ class DlmsProtocol {
     fun byteArrayToHexString(bytes: ByteArray): String {
         return bytes.joinToString("") { "%02x".format(it) }
     }
+
+    /**
+     * Open HDLC connection (SNRM)
+     */
+    fun createOpenRequest(): ByteArray {
+        return hdlc.hdlcs(0x93.toByte(), null)
+    }
+
+    /**
+     * Process open response (UA)
+     */
+    fun processOpenResponse(response: ByteArray): DlmsResult {
+        return when (val result = hdlc.hdlcr(response)) {
+            is HdlcResult.Success -> DlmsResult.Success("Connection opened")
+            is HdlcResult.Error -> DlmsResult.Error(result.message)
+        }
+    }
+
+    /**
+     * Create AARQ (Association Request)
+     */
+    fun createSessionRequest(password: ByteArray? = null): ByteArray {
+        // Simplified AARQ - would need full implementation based on rank
+        val aarq = byteArrayOf(
+            0x60.toByte(), 0x30, // AARQ tag + length
+            0xa1.toByte(), 0x09, // Application context
+            0x06, 0x07, 0x60, 0x85.toByte(), 0x74, 0x05, 0x08, 0x01, 0x01,
+            0x8a.toByte(), 0x02, 0x07, 0x80.toByte() // Authentication: none
+        )
+
+        return hdlc.hdlcs(0x13, aarq)
+    }
+
+    /**
+     * Process session response (AARE)
+     */
+    fun processSessionResponse(response: ByteArray): DlmsResult {
+        return when (val result = hdlc.hdlcr(response)) {
+            is HdlcResult.Success -> {
+                result.data?.let { data ->
+                    if (data[0] == 0x61.toByte()) {
+                        DlmsResult.Success("Session established")
+                    } else {
+                        DlmsResult.Error("Invalid AARE response")
+                    }
+                } ?: DlmsResult.Error("No data in response")
+            }
+            is HdlcResult.Error -> DlmsResult.Error(result.message)
+        }
+    }
+
+    /**
+     * Create GET request with HDLC wrapping
+     */
+    fun createWrappedGetRequest(
+        objIndex: Int,
+        attribute: Byte,
+        selector: Byte = 0,
+        parameters: ByteArray? = null
+    ): ByteArray {
+        val request = createGetRequest(objIndex, attribute, selector, parameters)
+        return hdlc.hdlcs(0x13, request)
+    }
+
+    /**
+     * Process GET response
+     */
+    fun processGetResponse(response: ByteArray): DlmsResult {
+        return when (val result = hdlc.hdlcr(response)) {
+            is HdlcResult.Success -> {
+                result.data?.let { data ->
+                    // Decrypt if needed
+                    val decryptedData = if (currentRank <= RANK_ADMIN && dedicatedKey != null) {
+                        decrypt(dedicatedKey!!, data) ?: return DlmsResult.Error("Decryption failed")
+                    } else {
+                        data
+                    }
+
+                    // Parse response
+                    if (decryptedData.size > 3 && decryptedData[0] == 0xc4.toByte()) {
+                        DlmsResult.DataReceived(decryptedData)
+                    } else {
+                        DlmsResult.Error("Invalid GET response format")
+                    }
+                } ?: DlmsResult.Error("No data in response")
+            }
+            is HdlcResult.Error -> DlmsResult.Error(result.message)
+        }
+    }
+
+    /**
+     * Close connection
+     */
+    fun createCloseRequest(): ByteArray {
+        val rlrq = byteArrayOf(0x62.toByte(), 0x03, 0x80.toByte(), 0x01, 0x00)
+        return hdlc.hdlcs(0x13, rlrq)
+    }
+
+    fun setRank(rank: Int) {
+        currentRank = rank
+    }
+}
+
+sealed class DlmsResult {
+    data class Success(val message: String) : DlmsResult()
+    data class DataReceived(val data: ByteArray) : DlmsResult()
+    data class Error(val message: String) : DlmsResult()
 }
