@@ -1,6 +1,5 @@
 package com.example.meterlink.data.repository
 
-import android.bluetooth.BluetoothDevice
 import android.util.Log
 import com.example.meterlink.dlms.DLMS
 import kotlinx.coroutines.delay
@@ -10,14 +9,21 @@ import javax.inject.Inject
 
 class DlmsRepository @Inject constructor(
     private val bleRepository: BleRepository,
-    private val dlms: DLMS
+    private val dlms: DLMS,
+    private val settingsRepository: SettingsRepository
 ) {
     private val TAG = "DlmsRepository"
     init {
+        // Load from SharedPreferences and apply to DLMS
+        val settings = settingsRepository.getSettings()
         dlms.readMeterInformation()
-        Log.d(TAG, "Loaded settings: Account=${dlms.Account(-1)}, Rank=${dlms.getRank(-1)}, Addr=${dlms.getAddress(-1)}")
+        dlms.Account(settings["account"]!!, -1)
+        dlms.Password(settings["password"]!!, -1)
+        dlms.writeAddress(settings["address"]!!, -1)
+        dlms.writeRank(settings["rank"]!!, -1)
+        dlms.updateAllMeterInformation()
     }
-    suspend fun establishConnection(device: BluetoothDevice): Flow<ConnectionProgress> = flow {
+    fun establishConnection(): Flow<ConnectionProgress> = flow {
         Log.d(TAG, "Starting connection with Count=${dlms.Count()}")
         // Only call changeCurrent if we have data
         if (dlms.Count() > 0) {
@@ -66,15 +72,16 @@ class DlmsRepository @Inject constructor(
             return@flow
         }
 
-        // Step 4: Challenge (for HLS authentication)
+        Log.d(TAG, "Processing AARE response: ${sessionResponse.size} bytes")
         val challengeRequest = dlms.Challenge(ret, sessionResponse)
+        Log.d(TAG, "Challenge result: ret[0]=${ret[0]}, request=${challengeRequest?.size ?: "null"}")
+
         if (ret[0] == 0) {
             emit(ConnectionProgress.Failed("Failed to process AARE"))
             return@flow
         }
 
         if (challengeRequest != null) {
-            // HLS required (SUPER/ADMIN)
             emit(ConnectionProgress.Connecting("HLS authentication..."))
 
             if (!bleRepository.writeCharacteristic(challengeRequest)) {
@@ -82,29 +89,28 @@ class DlmsRepository @Inject constructor(
                 return@flow
             }
 
-            // Step 6: Receive Challenge response and Confirm
-            val challengeResponse = bleRepository.waitForResponse(3000)
+            val challengeResponse = bleRepository.waitForResponse(5000)
             if (challengeResponse == null) {
                 emit(ConnectionProgress.Failed("No Challenge response"))
                 return@flow
             }
 
-            val confirmRequest = dlms.Confirm(ret, challengeResponse)
+            Log.d(TAG, "Processing Challenge response: ${challengeResponse.size} bytes")
+            dlms.Confirm(ret, challengeResponse)
+            Log.d(TAG, "Confirm result: ret[0]=${ret[0]}")
+
             if (ret[0] == 0) {
                 emit(ConnectionProgress.Failed("Failed HLS authentication"))
                 return@flow
             }
 
             Log.d(TAG, "HLS authentication completed")
-        } else {
-            // No Challenge needed (READER/POWER/PUBLIC)
-            Log.d(TAG, "LLS/No authentication")
         }
 
         emit(ConnectionProgress.Connected)
     }
 
-    suspend fun readMeterData(objectIndex: Int, attribute: Byte = 2): Flow<MeterDataResult> = flow {
+    fun readMeterData(objectIndex: Int, attribute: Byte = 2): Flow<MeterDataResult> = flow {
         emit(MeterDataResult.Loading)
 
         val request = dlms.getReq(objectIndex, attribute, 0, null, 0)
@@ -139,32 +145,16 @@ class DlmsRepository @Inject constructor(
     }
 
     fun updateSettings(account: String, password: String, address: String, rank: String, scan: String, tick: String, interval: String) {
+        settingsRepository.saveSettings(account, password, address, rank, scan, tick, interval)
+        // Also update DLMS
         dlms.Account(account, -1)
         dlms.Password(password, -1)
         dlms.writeAddress(address, -1)
         dlms.writeRank(rank, -1)
-        dlms.writeScan(scan)
-        dlms.writeTick(tick)
-        dlms.writeInterval(interval)
-        dlms.updateAllMeterInformation() // Saves to file
+        dlms.updateAllMeterInformation()
     }
 
-    fun getSettings(): Map<String, String> {
-        // Load once when settings screen opens
-        if (dlms.Count() == 0) {
-            dlms.readMeterInformation()
-        }
-
-        return mapOf(
-            "account" to (dlms.Account(-1) ?: ""),
-            "password" to (dlms.Password(-1) ?: "3030303030303030"),
-            "address" to (dlms.getAddress(-1) ?: "41"),
-            "rank" to (dlms.getRank(-1) ?: "03"),
-            "scan" to dlms.readScan(),
-            "tick" to dlms.readTick(),
-            "interval" to dlms.readInterval()
-        )
-    }
+    fun getSettings() = settingsRepository.getSettings()
 
     sealed class MeterDataResult {
         object Loading : MeterDataResult()

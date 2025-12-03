@@ -3,6 +3,7 @@ package com.example.meterlink.di
 import android.content.Context
 import com.example.meterlink.data.repository.BleRepository
 import com.example.meterlink.data.repository.DlmsRepository
+import com.example.meterlink.data.repository.SettingsRepository
 import com.example.meterlink.dlms.DLMS
 import dagger.Module
 import dagger.Provides
@@ -29,10 +30,17 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideSettingsRepository(@ApplicationContext context: Context): SettingsRepository {
+        return SettingsRepository(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideDlmsRepository(
         bleRepository: BleRepository,
-        dlms: DLMS
+        dlms: DLMS,
+        settingsRepository: SettingsRepository
     ): DlmsRepository {
-        return DlmsRepository(bleRepository, dlms)
+        return DlmsRepository(bleRepository, dlms, settingsRepository)
     }
 }

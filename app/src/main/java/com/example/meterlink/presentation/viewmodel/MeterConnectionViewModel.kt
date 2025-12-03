@@ -3,7 +3,6 @@ package com.example.meterlink.presentation.viewmodel
 import android.bluetooth.BluetoothDevice
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.meterlink.data.protocol.DlmsResult
 import com.example.meterlink.data.repository.BleConnectionState
 import com.example.meterlink.data.repository.BleRepository
 import com.example.meterlink.data.repository.ConnectionProgress
@@ -42,15 +41,15 @@ class MeterConnectionViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(connectionState = state)
 
                 if (state is BleConnectionState.Connected) {
-                    establishDlmsConnection(device)
+                    establishDlmsConnection()
                 }
             }
         }
     }
 
-    private fun establishDlmsConnection(device: BluetoothDevice) {
+    private fun establishDlmsConnection() {
         viewModelScope.launch {
-            dlmsRepository.establishConnection(device).collect { progress ->
+            dlmsRepository.establishConnection().collect { progress ->
                 when (progress) {
                     is ConnectionProgress.Connecting -> {
                         _uiState.value = _uiState.value.copy(statusMessage = progress.message)
