@@ -128,19 +128,36 @@ class DlmsRepository @Inject constructor(
         }
 
         val ret = IntArray(2)
-        val data = dlms.DataRes(ret, response, true)
+        val allData = ArrayList<String>()
+        var data = dlms.DataRes(ret, response, true)
+        allData.addAll(data)
 
-        Log.d(TAG, "DataRes returned: size=${data.size}, ret[0]=${ret[0]}, ret[1]=${ret[1]}")
-        data.forEachIndexed { index, s ->
-            Log.d(TAG, "data[$index]: $s")
+        // Handle block transfer
+        while (ret[0] == 2 && ret[1] == 0) {
+            emit(MeterDataResult.Partial(ArrayList(allData)))
+
+            val blockNo = dlms.getBlockNo()
+            val nextRequest = dlms.getReq_next(blockNo)
+
+            if (!bleRepository.writeCharacteristic(nextRequest)) {
+                emit(MeterDataResult.Error("Failed to send GET-NEXT"))
+                return@flow
+            }
+
+            val nextResponse = bleRepository.waitForResponse(3000)
+            if (nextResponse == null) {
+                emit(MeterDataResult.Error("No response for next block"))
+                return@flow
+            }
+
+            data = dlms.DataRes(ret, nextResponse, true)
+            allData.addAll(data)
         }
 
         when {
-            ret[1] == -2 -> emit(MeterDataResult.Error("Invalid HDLC frame"))
-            ret[1] == -1 -> emit(MeterDataResult.Error("Service error"))
+            ret[1] < 0 -> emit(MeterDataResult.Error("Protocol error: ${ret[1]}"))
             ret[1] != 0 -> emit(MeterDataResult.Error("Access error: ${ret[1]}"))
-            ret[0] == 2 -> emit(MeterDataResult.Partial(data))
-            else -> emit(MeterDataResult.Success(data))
+            else -> emit(MeterDataResult.Success(allData))
         }
     }
 
@@ -152,6 +169,36 @@ class DlmsRepository @Inject constructor(
         dlms.writeAddress(address, -1)
         dlms.writeRank(rank, -1)
         dlms.updateAllMeterInformation()
+    }
+
+    fun executeAction(objectIndex: Int, methodId: Int, parameter: String?): Flow<MeterDataResult> = flow {
+        emit(MeterDataResult.Loading)
+
+        val request = dlms.actReq(objectIndex, methodId.toByte(), parameter, 0)
+        Log.d(TAG, "ACTION request bytes: ${request.joinToString("") { "%02x".format(it) }}")
+
+        if (!bleRepository.writeCharacteristic(request)) {
+            emit(MeterDataResult.Error("Failed to send ACTION request"))
+            return@flow
+        }
+
+        val response = bleRepository.waitForResponse(3000)
+        if (response == null) {
+            emit(MeterDataResult.Error("No response"))
+            return@flow
+        }
+
+        val ret = IntArray(2)
+        val data = dlms.DataRes(ret, response, true)
+        Log.d(TAG, "Action response - ret[0]=${ret[0]}, ret[1]=${ret[1]}")
+
+        when {
+            ret[1] == -2 -> emit(MeterDataResult.Error("Invalid HDLC frame"))
+            ret[1] == -1 -> emit(MeterDataResult.Error("Service error"))
+            ret[1] != 0 -> emit(MeterDataResult.Error("Action error: ${ret[1]}"))
+            ret[0] == 2 -> emit(MeterDataResult.Partial(data))
+            else -> emit(MeterDataResult.Success(data))
+        }
     }
 
     fun getSettings() = settingsRepository.getSettings()

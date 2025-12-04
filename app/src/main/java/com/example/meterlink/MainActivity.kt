@@ -4,7 +4,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.meterlink.presentation.screens.MeterConnectionScreen
+import com.example.meterlink.presentation.viewmodel.MeterConnectionViewModel
 import com.example.meterlink.ui.theme.MeterLinkTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -15,7 +17,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MeterLinkTheme {
-                MeterConnectionScreen()
+                val viewModel: MeterConnectionViewModel = hiltViewModel()
+
+                MeterConnectionScreen(
+                    viewModel = viewModel,
+                    onDisconnect = { /* Optional: navigate somewhere or do nothing */ }
+                )
             }
         }
     }

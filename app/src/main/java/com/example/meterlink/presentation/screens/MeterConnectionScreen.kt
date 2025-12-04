@@ -10,17 +10,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.meterlink.data.repository.BleConnectionState
 import com.example.meterlink.presentation.components.AppDrawer
 import com.example.meterlink.presentation.viewmodel.MeterConnectionViewModel
 import kotlinx.coroutines.launch
 
-@SuppressLint("MissingPermission")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MeterConnectionScreen(
-    @Suppress("DEPRECATION") viewModel: MeterConnectionViewModel = hiltViewModel()
+    viewModel: MeterConnectionViewModel,
+    onDisconnect: () -> Unit
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -31,9 +30,22 @@ fun MeterConnectionScreen(
         drawerContent = {
             AppDrawer(
                 currentRoute = currentScreen,
-                navigateToHome = { currentScreen = "home" },
-                navigateToOperations = { currentScreen = "operations" },
-                navigateToSettings = { currentScreen = "settings" },
+                navigateToHome = {
+                    currentScreen = "home"
+                    scope.launch { drawerState.close() }
+                },
+                navigateToOperations = {
+                    currentScreen = "operations"
+                    scope.launch { drawerState.close() }
+                },
+                navigateToSettings = {
+                    currentScreen = "settings"
+                    scope.launch { drawerState.close() }
+                },
+                onDisconnect = {
+                    viewModel.disconnect()
+                    onDisconnect()
+                },
                 closeDrawer = { scope.launch { drawerState.close() } }
             )
         }
@@ -44,13 +56,65 @@ fun MeterConnectionScreen(
                 onMenuClick = { scope.launch { drawerState.open() } },
                 onNavigateToOperations = { currentScreen = "operations" }
             )
-            "operations" -> MeterOperationsScreen(
+            "operations" -> OperationsContent(
                 viewModel = viewModel,
-                onBack = { currentScreen = "home" }
+                onMenuClick = { scope.launch { drawerState.open() } }
             )
-            "settings" -> SettingsScreen(
+            "settings" -> SettingsContent(
                 viewModel = viewModel,
-                onBack = { currentScreen = "home" }
+                onMenuClick = { scope.launch { drawerState.open() } }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun OperationsContent(
+    viewModel: MeterConnectionViewModel,
+    onMenuClick: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Meter Operations") },
+                navigationIcon = {
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Default.Menu, "Menu")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        MeterOperationsScreen(
+            viewModel = viewModel,
+            modifier = Modifier.padding(padding)
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsContent(
+    viewModel: MeterConnectionViewModel,
+    onMenuClick: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Settings") },
+                navigationIcon = {
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Default.Menu, "Menu")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding)) {
+            SettingsScreen(
+                viewModel = viewModel,
+                onBack = { /* Handled by drawer */ }
             )
         }
     }

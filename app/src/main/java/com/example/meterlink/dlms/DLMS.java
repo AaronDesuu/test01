@@ -359,6 +359,10 @@ public class DLMS {
             365,    //31
     };
 
+    private final static byte[] GET_NEXT_REQUEST = {
+            (byte)0xc0, 0x02, (byte)0xc1, 0x00, 0x00, 0x00, 0x01
+    };
+
     public long DatetimeToSec(String datetime) {
         int d = Integer.parseInt(datetime.substring(0, 2));
         int m = Integer.parseInt(datetime.substring(3, 5));
@@ -481,19 +485,31 @@ public class DLMS {
 
     public String getBitsStr(final String bits) {
         StringBuffer ret = new StringBuffer();
-        long eval = 1, val = Long.parseLong(bits);
-        if (val > 0) {
-            ret.append(String.format("%d (bit", val));
-            for (int i = 0; i < 32; i++) {
-                if ((val & eval) > 0) {
-                    ret.append(String.format(" %d", i));
-                }
-                eval <<= 1;
-            }
-            ret.append(")");
-        } else {
-            ret.append(String.format("%X (off)", val));
+
+        // Check if string contains date format (has slashes or colons)
+        if (bits.contains("/") || bits.contains(":")) {
+            return bits;  // Return date strings as-is
         }
+
+        try {
+            long eval = 1, val = Long.parseLong(bits);
+            if (val > 0) {
+                ret.append(String.format("%d (bit", val));
+                for (int i = 0; i < 32; i++) {
+                    if ((val & eval) > 0) {
+                        ret.append(String.format(" %d", i));
+                    }
+                    eval <<= 1;
+                }
+                ret.append(")");
+            } else {
+                ret.append(String.format("%X (off)", val));
+            }
+        } catch (NumberFormatException e) {
+            // If parsing fails, return the original string
+            return bits;
+        }
+
         return ret.toString();
     }
 
@@ -1718,16 +1734,34 @@ public class DLMS {
                 break;
 
             case IST_BILLING_PARAMS:
-                ArrayList<BillingData> list = new ArrayList<BillingData>();
                 for (int i = 0; i < data.size(); ) {
-                    out.add(data.get(i + 0));
-                    out.add(String.format("IMP: %.3f [kWh], EXP: %.3f [kWh]", Float(1000.0, data.get(i + 1)), Float(1000.0, data.get(i + 2))));
-                    out.add(String.format("ABS: %.3f [kWh], NET: %.3f [kWh]", Float(1000.0, data.get(i + 3)), Float(1000.0, data.get(i + 4))));
-                    out.add(String.format("Max Imp: %.3f [kW], Exp: %.3f [kW]", Float(1000.0, data.get(i + 5)), Float(1000.0, data.get(i + 6))));
-                    out.add(String.format("Volt0 Min: %.2f [V]", Float(100.0, data.get(i + 7))));
-                    out.add(String.format("Alert1 Dsc: %s", getBitsStr(data.get(i + 8))));
-                    out.add(String.format("Alert2 Dsc: %s", getBitsStr(data.get(i + 9))));
-                    i += 10;
+                    if (i + 0 < data.size()) out.add(data.get(i + 0));
+                    if (i + 1 < data.size() && i + 2 < data.size()) {
+                        out.add(String.format("IMP: %.3f [kWh], EXP: %.3f [kWh]",
+                                Float(1000.0, data.get(i + 1)), Float(1000.0, data.get(i + 2))));
+                    }
+                    if (i + 3 < data.size() && i + 4 < data.size()) {
+                        out.add(String.format("ABS: %.3f [kWh], NET: %.3f [kWh]",
+                                Float(1000.0, data.get(i + 3)), Float(1000.0, data.get(i + 4))));
+                    }
+                    if (i + 5 < data.size() && i + 6 < data.size()) {
+                        out.add(String.format("Max Imp: %.3f [kW], Exp: %.3f [kW]",
+                                Float(1000.0, data.get(i + 5)), Float(1000.0, data.get(i + 6))));
+                    }
+                    if (i + 7 < data.size()) {
+                        out.add(String.format("Volt0 Min: %.2f [V]", Float(100.0, data.get(i + 7))));
+                    }
+                    if (i + 8 < data.size()) {
+                        out.add(String.format("Alert1 Dsc: %s", getBitsStr(data.get(i + 8))));
+                    }
+                    if (i + 9 < data.size()) {
+                        out.add(String.format("Alert2 Dsc: %s", getBitsStr(data.get(i + 9))));
+                    }
+
+                    i += 10;  // Move to next billing record
+
+                    // Safety: if we don't have enough data for a full record, break
+                    if (i + 9 >= data.size()) break;
                 }
                 break;
 
@@ -2826,6 +2860,25 @@ public class DLMS {
         return data;
     }
 
+    public byte[] getReq_next(int blockNo) {
+        byte[] nextQ = new byte[GET_NEXT_REQUEST.length];
+        System.arraycopy(GET_NEXT_REQUEST, 0, nextQ, 0, GET_NEXT_REQUEST.length);
+        setUInt32(nextQ, nextQ.length - 4, blockNo);
+
+        byte[] data;
+        if (mRank == RANK_ADMIN || mRank == RANK_SUPER) {
+            data = encrypt(dedicate, (byte) 0x30, nextQ);
+            data = hdlcs((byte) 0x13, setTag(ded_getQ, data));
+        } else {
+            data = hdlcs((byte) 0x13, nextQ);
+        }
+        return data;
+    }
+
+    public int getBlockNo() {
+        return mBlockNo;
+    }
+
     public byte[] setReq(final int idx, final byte atr, final byte sel, final String attach, final byte pos) {
 
         int len, offset;
@@ -2906,6 +2959,10 @@ public class DLMS {
             actQ[offset++] = (byte) 0x01;
             System.arraycopy(param, 0, actQ, offset, param.length);
         }
+        // ADD THIS LOGGING HERE
+        Log.d("DLMS", "actQ before encrypt - length: " + actQ.length);
+        Log.d("DLMS", "actQ hex: " + setOct2Str(actQ, 0, actQ.length));
+        Log.d("DLMS", "param passed: " + attach);
         byte[] data;
         if (mRank == RANK_ADMIN || mRank == RANK_SUPER) {
             data = encrypt(dedicate, (byte) 0x30, actQ);

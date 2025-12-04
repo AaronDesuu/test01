@@ -18,6 +18,7 @@ fun AppDrawer(
     navigateToHome: () -> Unit,
     navigateToOperations: () -> Unit,
     navigateToSettings: () -> Unit,
+    onDisconnect: () -> Unit,
     closeDrawer: () -> Unit
 ) {
     ModalDrawerSheet {
