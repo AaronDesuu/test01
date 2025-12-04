@@ -26,7 +26,8 @@ data class MeterConnectionUiState(
     val statusMessage: String = "",
     val lastResponse: String = "",
     val dialogState: DialogState = DialogState(),
-    val isOperationInProgress: Boolean = false
+    val isOperationInProgress: Boolean = false,
+    val serialNumber: String? = null
 )
 
 data class DialogState(
@@ -76,6 +77,7 @@ class MeterConnectionViewModel @Inject constructor(
                             statusMessage = "DLMS connected",
                             isDlmsConnected = true
                         )
+                        fetchSerialNumber()
                     }
                     is ConnectionProgress.Failed -> {
                         _uiState.value = _uiState.value.copy(
@@ -85,6 +87,77 @@ class MeterConnectionViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun fetchSerialNumber() {
+        viewModelScope.launch {
+            dlmsRepository.readSerialNumber().collect { result ->
+                if (result is DlmsRepository.MeterDataResult.Success && result.data.size > 1) {
+                    // Index 0 is timestamp, index 1 is "Serial NO: XXXXXXXXXX"
+                    val serialNo = result.data[1].replace("Serial NO: ", "")
+                    _uiState.update { it.copy(serialNumber = serialNo) }
+                }
+            }
+        }
+    }
+
+    fun requestDemandReset() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Demand Reset",
+                    message = "Demand reset command will be issued.\n\n" +
+                            "This will reset the maximum demand values stored in the meter.\n\n" +
+                            "Are you sure you want to continue?",
+                    confirmText = "Yes, Reset",
+                    isDestructive = true,
+                    onConfirm = {
+                        executeDemandReset()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun dismissDialog() {
+        _uiState.update { it.copy(dialogState = DialogState()) }
+    }
+
+    fun executeDemandReset() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(
+                isOperationInProgress = true,
+                lastResponse = "Executing demand reset..."
+            )}
+
+            dlmsRepository.executeDemandReset().collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Loading -> {
+                        _uiState.update { it.copy(lastResponse = "Sending demand reset command...") }
+                    }
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Demand reset successful\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Demand reset failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
+        }
+    }
+
+    private fun getCurrentTimestamp(): String {
+        return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+            .format(java.util.Date())
     }
 
     fun readMeasure() {
@@ -158,69 +231,6 @@ class MeterConnectionViewModel @Inject constructor(
             }
         }
     }
-
-    fun requestDemandReset() {
-        _uiState.update {
-            it.copy(
-                dialogState = DialogState(
-                    show = true,
-                    title = "Demand Reset",
-                    message = "Demand reset command will be issued.\n\n" +
-                            "This will reset the maximum demand values stored in the meter.\n\n" +
-                            "Are you sure you want to continue?",
-                    confirmText = "Yes, Reset",
-                    isDestructive = true,
-                    onConfirm = { executeDemandReset() }
-                )
-            )
-        }
-    }
-
-    fun dismissDialog() {
-        _uiState.update { it.copy(dialogState = DialogState()) }
-    }
-
-    private fun executeDemandReset() {
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    dialogState = DialogState(),
-                    lastResponse = "Executing demand reset...",
-                    isOperationInProgress = true
-                )
-            }
-
-            dlmsRepository.executeAction(DLMS.IST_DEMAND_RESET, 1, "0f00").collect { result ->
-                when (result) {
-                    is DlmsRepository.MeterDataResult.Loading -> {
-                        _uiState.update { it.copy(lastResponse = "Resetting demand...") }
-                    }
-                    is DlmsRepository.MeterDataResult.Partial -> {
-                        _uiState.update {
-                            it.copy(lastResponse = "Demand reset partial\n${result.data.joinToString("\n")}")
-                        }
-                    }
-                    is DlmsRepository.MeterDataResult.Success -> {
-                        _uiState.update {
-                            it.copy(
-                                lastResponse = "Demand reset successful\n${result.data.joinToString("\n")}",
-                                isOperationInProgress = false
-                            )
-                        }
-                    }
-                    is DlmsRepository.MeterDataResult.Error -> {
-                        _uiState.update {
-                            it.copy(
-                                lastResponse = "Demand reset failed: ${result.message}",
-                                isOperationInProgress = false
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     fun readBilling() {
         currentReadJob?.cancel()
         currentReadJob = viewModelScope.launch {
@@ -362,6 +372,390 @@ class MeterConnectionViewModel @Inject constructor(
                     }
                 }
             }
+        }
+    }
+
+    // Set Clock
+    fun requestSetClock() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Set Clock",
+                    message = "Set meter clock to current system time?",
+                    confirmText = "Set Clock",
+                    isDestructive = false,
+                    onConfirm = {
+                        executeSetClock()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executeSetClock() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement set clock DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Set clock not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    // Reset Billing
+    fun requestResetBilling() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Clear Billing Data",
+                    message = "⚠️ This will clear all billing data. This cannot be undone!",
+                    confirmText = "Clear Billing",
+                    isDestructive = true,
+                    onConfirm = {
+                        executeResetBilling()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executeResetBilling() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement reset billing DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Reset billing not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    // Reset Event
+    fun requestResetEvent() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Clear Event Data",
+                    message = "⚠️ This will clear all event/power quality data. This cannot be undone!",
+                    confirmText = "Clear Events",
+                    isDestructive = true,
+                    onConfirm = {
+                        executeResetEvent()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executeResetEvent() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement reset event DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Reset event not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    // Reset Load
+    fun requestResetLoad() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Clear Load Profile",
+                    message = "⚠️ This will clear all load profile data. This cannot be undone!",
+                    confirmText = "Clear Load",
+                    isDestructive = true,
+                    onConfirm = {
+                        executeResetLoad()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executeResetLoad() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement reset load DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Reset load not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    // Reset Ampere
+    fun requestResetAmpere() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Clear Current Profile",
+                    message = "⚠️ This will clear all ampere/current profile data. This cannot be undone!",
+                    confirmText = "Clear Current",
+                    isDestructive = true,
+                    onConfirm = {
+                        executeResetAmpere()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executeResetAmpere() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement reset ampere DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Reset ampere not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    // Factory Settings Methods
+
+    fun requestSetMeterType() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Set Meter Type",
+                    message = "Configure meter type for Imp-Exp/ABS/NET?",
+                    confirmText = "Configure",
+                    isDestructive = false,
+                    onConfirm = {
+                        executeSetMeterType()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executeSetMeterType() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement set meter type DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Set meter type not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    fun requestWholeClear() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Whole Clear",
+                    message = "⚠️ This will clear ALL measured data. This cannot be undone!",
+                    confirmText = "Clear All",
+                    isDestructive = true,
+                    onConfirm = {
+                        executeWholeClear()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executeWholeClear() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement whole clear DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Whole clear not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    fun requestMissingNeutralOn() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Enable Missing Neutral Detection",
+                    message = "Enable missing neutral detection?",
+                    confirmText = "Enable",
+                    isDestructive = false,
+                    onConfirm = {
+                        executeMissingNeutralOn()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executeMissingNeutralOn() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement missing neutral ON DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Missing neutral ON not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    fun requestMissingNeutralOff() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Disable Missing Neutral Detection",
+                    message = "Disable missing neutral detection?",
+                    confirmText = "Disable",
+                    isDestructive = false,
+                    onConfirm = {
+                        executeMissingNeutralOff()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executeMissingNeutralOff() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement missing neutral OFF DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Missing neutral OFF not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    fun requestPowerNetworkOne() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Power Network ONE",
+                    message = "Set power network configuration to ONE?",
+                    confirmText = "Set",
+                    isDestructive = false,
+                    onConfirm = {
+                        executePowerNetworkOne()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executePowerNetworkOne() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement power network ONE DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Power network ONE not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    fun requestPowerNetworkTwo() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Power Network TWO",
+                    message = "Set power network configuration to TWO?",
+                    confirmText = "Set",
+                    isDestructive = false,
+                    onConfirm = {
+                        executePowerNetworkTwo()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executePowerNetworkTwo() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement power network TWO DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Power network TWO not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    fun requestPotential() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Set Potential",
+                    message = "Configure potential settings?",
+                    confirmText = "Configure",
+                    isDestructive = false,
+                    onConfirm = {
+                        executePotential()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executePotential() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement potential DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Potential setting not yet implemented",
+                isOperationInProgress = false
+            )}
+        }
+    }
+
+    fun requestTypeSet() {
+        _uiState.update {
+            it.copy(
+                dialogState = DialogState(
+                    show = true,
+                    title = "Type Set",
+                    message = "Configure type settings?",
+                    confirmText = "Configure",
+                    isDestructive = false,
+                    onConfirm = {
+                        executeTypeSet()
+                        dismissDialog()
+                    }
+                )
+            )
+        }
+    }
+
+    fun executeTypeSet() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOperationInProgress = true) }
+            // TODO: Implement type set DLMS action
+            _uiState.update { it.copy(
+                lastResponse = "Type set not yet implemented",
+                isOperationInProgress = false
+            )}
         }
     }
 

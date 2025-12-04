@@ -21,7 +21,6 @@ class MainActivity : ComponentActivity() {
 
                 MeterConnectionScreen(
                     viewModel = viewModel,
-                    onDisconnect = { /* Optional: navigate somewhere or do nothing */ }
                 )
             }
         }

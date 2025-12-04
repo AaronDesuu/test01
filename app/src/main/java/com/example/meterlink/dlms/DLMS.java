@@ -2959,10 +2959,6 @@ public class DLMS {
             actQ[offset++] = (byte) 0x01;
             System.arraycopy(param, 0, actQ, offset, param.length);
         }
-        // ADD THIS LOGGING HERE
-        Log.d("DLMS", "actQ before encrypt - length: " + actQ.length);
-        Log.d("DLMS", "actQ hex: " + setOct2Str(actQ, 0, actQ.length));
-        Log.d("DLMS", "param passed: " + attach);
         byte[] data;
         if (mRank == RANK_ADMIN || mRank == RANK_SUPER) {
             data = encrypt(dedicate, (byte) 0x30, actQ);

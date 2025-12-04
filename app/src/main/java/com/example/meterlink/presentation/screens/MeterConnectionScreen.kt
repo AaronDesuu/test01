@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.meterlink.data.repository.BleConnectionState
 import com.example.meterlink.presentation.components.AppDrawer
 import com.example.meterlink.presentation.viewmodel.MeterConnectionViewModel
@@ -18,8 +19,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MeterConnectionScreen(
-    viewModel: MeterConnectionViewModel,
-    onDisconnect: () -> Unit
+    viewModel: MeterConnectionViewModel = hiltViewModel()
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -30,102 +30,73 @@ fun MeterConnectionScreen(
         drawerContent = {
             AppDrawer(
                 currentRoute = currentScreen,
-                navigateToHome = {
-                    currentScreen = "home"
-                    scope.launch { drawerState.close() }
-                },
-                navigateToOperations = {
-                    currentScreen = "operations"
-                    scope.launch { drawerState.close() }
-                },
-                navigateToSettings = {
-                    currentScreen = "settings"
-                    scope.launch { drawerState.close() }
-                },
-                onDisconnect = {
-                    viewModel.disconnect()
-                    onDisconnect()
-                },
+                navigateToHome = { currentScreen = "home" },
+                navigateToOperations = { currentScreen = "operations" },
+                navigateToMaintenance = { currentScreen = "maintenance" },
+                navigateToFactory = { currentScreen = "factory" },
+                navigateToSettings = { currentScreen = "settings" },
                 closeDrawer = { scope.launch { drawerState.close() } }
             )
         }
     ) {
-        when (currentScreen) {
-            "home" -> HomeContent(
-                viewModel = viewModel,
-                onMenuClick = { scope.launch { drawerState.open() } },
-                onNavigateToOperations = { currentScreen = "operations" }
-            )
-            "operations" -> OperationsContent(
-                viewModel = viewModel,
-                onMenuClick = { scope.launch { drawerState.open() } }
-            )
-            "settings" -> SettingsContent(
-                viewModel = viewModel,
-                onMenuClick = { scope.launch { drawerState.open() } }
-            )
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(getScreenTitle(currentScreen)) },
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, "Menu")
+                        }
+                    }
+                )
+            }
+        ) { padding ->
+            when (currentScreen) {
+                "home" -> HomeContent(
+                    viewModel = viewModel,
+                    onNavigateToOperations = { currentScreen = "operations" },
+                    modifier = Modifier.padding(padding)
+                )
+                "operations" -> MeterOperationsScreen(
+                    viewModel = viewModel,
+                    onNavigateHome = { currentScreen = "home" },
+                    modifier = Modifier.padding(padding)
+                )
+                "maintenance" -> MaintenanceScreen(
+                    viewModel = viewModel,
+                    onNavigateHome = { currentScreen = "home" },
+                    modifier = Modifier.padding(padding)
+                )
+                "factory" -> FactorySettingScreen(
+                    viewModel = viewModel,
+                    onNavigateHome = { currentScreen = "home" },
+                    modifier = Modifier.padding(padding)
+                )
+                "settings" -> SettingsScreen(
+                    viewModel = viewModel,
+                    onBack = { currentScreen = "home" },
+                    modifier = Modifier.padding(padding)
+                )
+            }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun OperationsContent(
-    viewModel: MeterConnectionViewModel,
-    onMenuClick: () -> Unit
-) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Meter Operations") },
-                navigationIcon = {
-                    IconButton(onClick = onMenuClick) {
-                        Icon(Icons.Default.Menu, "Menu")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        MeterOperationsScreen(
-            viewModel = viewModel,
-            modifier = Modifier.padding(padding)
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SettingsContent(
-    viewModel: MeterConnectionViewModel,
-    onMenuClick: () -> Unit
-) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = {
-                    IconButton(onClick = onMenuClick) {
-                        Icon(Icons.Default.Menu, "Menu")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
-            SettingsScreen(
-                viewModel = viewModel,
-                onBack = { /* Handled by drawer */ }
-            )
-        }
-    }
+private fun getScreenTitle(screen: String): String = when (screen) {
+    "home" -> "Meter Link"
+    "operations" -> "Operations"
+    "maintenance" -> "Maintenance"
+    "settings" -> "Settings"
+    "factory" -> "Factory Setting"
+    else -> "Meter Link"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeContent(
+    modifier: Modifier = Modifier,
     viewModel: MeterConnectionViewModel,
-    onMenuClick: () -> Unit,
-    onNavigateToOperations: () -> Unit = {}
+    onNavigateToOperations: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
@@ -139,84 +110,70 @@ fun HomeContent(
             onClose = { showScanner = false }
         )
     } else {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("MeterLink") },
-                    navigationIcon = {
-                        IconButton(onClick = onMenuClick) {
-                            Icon(Icons.Default.Menu, "Menu")
-                        }
-                    }
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            ConnectionStatusCard(uiState.connectionState)
+
+            if (uiState.statusMessage.isNotEmpty()) {
+                Text(
+                    text = uiState.statusMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
             }
-        ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                ConnectionStatusCard(uiState.connectionState)
 
-                if (uiState.statusMessage.isNotEmpty()) {
-                    Text(
-                        text = uiState.statusMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                }
+            Spacer(modifier = Modifier.height(24.dp))
 
+            uiState.selectedDevice?.let { device ->
+                DeviceInfoCard(device)
                 Spacer(modifier = Modifier.height(24.dp))
+            }
 
-                uiState.selectedDevice?.let { device ->
-                    DeviceInfoCard(device)
-                    Spacer(modifier = Modifier.height(24.dp))
+            when (uiState.connectionState) {
+                is BleConnectionState.Disconnected -> {
+                    Button(
+                        onClick = { showScanner = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Scan for Meters")
+                    }
                 }
-
-                when (uiState.connectionState) {
-                    is BleConnectionState.Disconnected -> {
+                is BleConnectionState.Connected -> {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Button(
-                            onClick = { showScanner = true },
+                            onClick = { onNavigateToOperations() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Scan for Meters")
+                            Text("Meter Operations")
                         }
-                    }
-                    is BleConnectionState.Connected -> {
-                        Column(
+                        Button(
+                            onClick = { viewModel.disconnect() },
                             modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
+                            )
                         ) {
-                            Button(
-                                onClick = { onNavigateToOperations() },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Meter Operations")
-                            }
-                            Button(
-                                onClick = { viewModel.disconnect() },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error
-                                )
-                            ) {
-                                Text("Disconnect")
-                            }
+                            Text("Disconnect")
                         }
                     }
-                    is BleConnectionState.Connecting -> {
-                        CircularProgressIndicator()
-                    }
-                    is BleConnectionState.Error -> {
-                        Button(
-                            onClick = { showScanner = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Retry")
-                        }
+                }
+                is BleConnectionState.Connecting -> {
+                    CircularProgressIndicator()
+                }
+                is BleConnectionState.Error -> {
+                    Button(
+                        onClick = { showScanner = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Retry")
                     }
                 }
             }

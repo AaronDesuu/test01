@@ -1,151 +1,157 @@
 package com.example.meterlink.presentation.screens
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.meterlink.presentation.components.ConfirmationDialog
+import com.example.meterlink.presentation.components.DeviceStatusCard
 import com.example.meterlink.presentation.viewmodel.MeterConnectionViewModel
 
+@SuppressLint("MissingPermission")
 @Composable
 fun MeterOperationsScreen(
     viewModel: MeterConnectionViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNavigateHome: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Status indicator
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (uiState.isOperationInProgress) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp
+        DeviceStatusCard(
+            deviceName = uiState.selectedDevice?.name,
+            serialNumber = uiState.serialNumber,
+            macAddress = uiState.selectedDevice?.address,
+            connectionState = uiState.connectionState,
+            isOperationInProgress = uiState.isOperationInProgress,
+            onDisconnect = { viewModel.disconnect() },
+            onNavigateHome = onNavigateHome
+        )
+
+        // Status & Config Card - Compact
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "Status & Config",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Loading...", style = MaterialTheme.typography.bodyMedium)
-            } else {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Complete",
-                    tint = Color.Green,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Ready", style = MaterialTheme.typography.bodyMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.readMeasure() },
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        enabled = !uiState.isOperationInProgress,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("MEASURE", style = MaterialTheme.typography.labelMedium)
+                    }
+                    Button(
+                        onClick = { viewModel.readState() },
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        enabled = !uiState.isOperationInProgress,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("STATE", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
         }
 
-        // Operation buttons
-        Text(
-            text = "Status & Config",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OperationButton(
-                "MEASURE",
-                Modifier.weight(1f),
-                enabled = !uiState.isOperationInProgress
-            ) { viewModel.readMeasure() }
-
-            OperationButton(
-                "STATE",
-                Modifier.weight(1f),
-                enabled = !uiState.isOperationInProgress
-            ) { viewModel.readState() }
+        // Actions Card - Compact
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "Actions",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Button(
+                    onClick = { viewModel.requestDemandReset() },
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                    enabled = !uiState.isOperationInProgress,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("DEMAND RESET", style = MaterialTheme.typography.labelMedium)
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = "Actions",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OperationButton(
-                "DEMAND",
-                Modifier.weight(1f),
-                isDestructive = true,
-                enabled = !uiState.isOperationInProgress
-            ) { viewModel.requestDemandReset() }
+        // Data Logs Card - Compact
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "Data Logs",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.readBilling() },
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        enabled = !uiState.isOperationInProgress,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("BILLING", style = MaterialTheme.typography.labelMedium)
+                    }
+                    Button(
+                        onClick = { viewModel.readEvent() },
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        enabled = !uiState.isOperationInProgress,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("EVENT", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.readLoad() },
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        enabled = !uiState.isOperationInProgress,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("LOAD", style = MaterialTheme.typography.labelMedium)
+                    }
+                    Button(
+                        onClick = { viewModel.readAmpere() },
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        enabled = !uiState.isOperationInProgress,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("AMPERE", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = "Data Logs",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OperationButton(
-                "BILLING",
-                Modifier.weight(1f),
-                enabled = !uiState.isOperationInProgress
-            ) { viewModel.readBilling() }
-
-            OperationButton(
-                "EVENT",
-                Modifier.weight(1f),
-                enabled = !uiState.isOperationInProgress
-            ) { viewModel.readEvent() }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OperationButton(
-                "LOAD",
-                Modifier.weight(1f),
-                enabled = !uiState.isOperationInProgress
-            ) { viewModel.readLoad() }
-
-            OperationButton(
-                "AMPERE",
-                Modifier.weight(1f),
-                enabled = !uiState.isOperationInProgress
-            ) { viewModel.readAmpere() }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Response display
+        // Response Log Card - Takes remaining space
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -154,14 +160,30 @@ fun MeterOperationsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .padding(12.dp)
             ) {
-                Text(
-                    text = "Response",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Response",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (uiState.isOperationInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    thickness = DividerDefaults.Thickness,
+                    color = DividerDefaults.color
                 )
-
                 Text(
                     text = uiState.lastResponse.ifEmpty { "No data" },
                     style = MaterialTheme.typography.bodySmall,
@@ -173,7 +195,6 @@ fun MeterOperationsScreen(
         }
     }
 
-    // Confirmation dialog
     ConfirmationDialog(
         showDialog = uiState.dialogState.show,
         title = uiState.dialogState.title,
@@ -183,27 +204,4 @@ fun MeterOperationsScreen(
         onConfirm = uiState.dialogState.onConfirm,
         onDismiss = { viewModel.dismissDialog() }
     )
-}
-
-@Composable
-fun OperationButton(
-    text: String,
-    modifier: Modifier = Modifier,
-    isDestructive: Boolean = false,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        modifier = modifier,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (isDestructive)
-                MaterialTheme.colorScheme.error
-            else
-                MaterialTheme.colorScheme.primary
-        )
-    ) {
-        Text(text)
-    }
 }
