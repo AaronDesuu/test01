@@ -396,12 +396,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executeSetClock() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement set clock DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Set clock not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Setting meter clock..."
             )}
+
+            dlmsRepository.setDateTime().collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Clock set successfully\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed to set clock: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -426,12 +442,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executeResetBilling() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement reset billing DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Reset billing not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Clearing billing data..."
             )}
+
+            dlmsRepository.executeAction(DLMS.IST_BILLING_PARAMS, 1, "0f00").collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Billing data cleared\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -456,12 +488,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executeResetEvent() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement reset event DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Reset event not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Clearing event data..."
             )}
+
+            dlmsRepository.executeAction(DLMS.IST_POWER_QUALITY, 1, "0f00").collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Event data cleared\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -486,12 +534,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executeResetLoad() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement reset load DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Reset load not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Clearing load profile..."
             )}
+
+            dlmsRepository.executeAction(DLMS.IST_LOAD_PROFILE, 1, "0f00").collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Load profile cleared\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -516,15 +580,30 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executeResetAmpere() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement reset ampere DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Reset ampere not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Clearing current profile..."
             )}
+
+            dlmsRepository.executeAction(DLMS.IST_AMPR_RECORD, 1, "0f00").collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Current profile cleared\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
-
     // Factory Settings Methods
 
     fun requestSetMeterType() {
@@ -547,12 +626,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executeSetMeterType() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement set meter type DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Set meter type not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Configuring meter type..."
             )}
+
+            dlmsRepository.setMeterType().collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Meter type configured\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -576,12 +671,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executeWholeClear() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement whole clear DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Whole clear not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Clearing all measured data..."
             )}
+
+            dlmsRepository.wholeClearMeasuredData().collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ All measured data cleared\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -605,12 +716,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executeMissingNeutralOn() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement missing neutral ON DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Missing neutral ON not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Enabling missing neutral detection..."
             )}
+
+            dlmsRepository.setMissingNeutral(true).collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Missing neutral enabled\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -634,12 +761,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executeMissingNeutralOff() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement missing neutral OFF DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Missing neutral OFF not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Disabling missing neutral detection..."
             )}
+
+            dlmsRepository.setMissingNeutral(false).collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Missing neutral disabled\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -663,12 +806,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executePowerNetworkOne() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement power network ONE DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Power network ONE not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Setting power network to ONE..."
             )}
+
+            dlmsRepository.setPowerNetwork(1).collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Power network set to ONE\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -692,12 +851,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executePowerNetworkTwo() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement power network TWO DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Power network TWO not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Setting power network to TWO..."
             )}
+
+            dlmsRepository.setPowerNetwork(2).collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Power network set to TWO\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -721,12 +896,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executePotential() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement potential DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Potential setting not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Configuring potential..."
             )}
+
+            dlmsRepository.setPotential().collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Potential configured\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -750,12 +941,28 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun executeTypeSet() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-            // TODO: Implement type set DLMS action
             _uiState.update { it.copy(
-                lastResponse = "Type set not yet implemented",
-                isOperationInProgress = false
+                isOperationInProgress = true,
+                lastResponse = "Configuring type set..."
             )}
+
+            dlmsRepository.setTypeSet().collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✓ Type set configured\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update { it.copy(
+                            lastResponse = "✗ Failed: ${result.message}\n${getCurrentTimestamp()}",
+                            isOperationInProgress = false
+                        )}
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 

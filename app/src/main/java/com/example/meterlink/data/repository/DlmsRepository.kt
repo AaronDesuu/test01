@@ -1,5 +1,6 @@
 package com.example.meterlink.data.repository
 
+import android.annotation.SuppressLint
 import android.util.Log
 import com.example.meterlink.dlms.DLMS
 import kotlinx.coroutines.delay
@@ -226,6 +227,241 @@ class DlmsRepository @Inject constructor(
             ret[1] == 12 -> emit(MeterDataResult.Error("Type unmatched (12) - Check parameter format"))
             ret[1] != 0 -> emit(MeterDataResult.Error("Error code: ${ret[1]}"))
             else -> emit(MeterDataResult.Success(arrayListOf("Demand reset success")))
+        }
+    }
+
+    fun executeAction(objectIndex: Int, methodId: Int = 1, parameter: String = "0f00"): Flow<MeterDataResult> = flow {
+        emit(MeterDataResult.Loading)
+        Log.d(TAG, "Executing action on object $objectIndex, method $methodId, param $parameter")
+
+        val request = dlms.actReq(objectIndex, methodId.toByte(), parameter, 0)
+
+        if (!bleRepository.writeCharacteristic(request)) {
+            emit(MeterDataResult.Error("Failed to send ACTION"))
+            return@flow
+        }
+
+        val response = bleRepository.waitForResponse(3000)
+        if (response == null) {
+            emit(MeterDataResult.Error("No response"))
+            return@flow
+        }
+
+        val ret = IntArray(2)
+        dlms.DataRes(ret, response, true)
+
+        Log.d(TAG, "ACTION result: ret[0]=${ret[0]}, ret[1]=${ret[1]}")
+
+        when {
+            ret[1] != 0 -> emit(MeterDataResult.Error("Error code: ${ret[1]}"))
+            else -> emit(MeterDataResult.Success(arrayListOf("Action completed successfully")))
+        }
+    }
+
+    @SuppressLint("DefaultLocale")
+    fun setDateTime(): Flow<MeterDataResult> = flow {
+        emit(MeterDataResult.Loading)
+        Log.d(TAG, "Setting clock to current time")
+
+        // Get current time
+        val calendar = java.util.Calendar.getInstance()
+        val dateTime = String.format(
+            "%04d%02d%02d%02d%02d%02d",
+            calendar.get(java.util.Calendar.YEAR),
+            calendar.get(java.util.Calendar.MONTH) + 1,
+            calendar.get(java.util.Calendar.DAY_OF_MONTH),
+            calendar.get(java.util.Calendar.HOUR_OF_DAY),
+            calendar.get(java.util.Calendar.MINUTE),
+            calendar.get(java.util.Calendar.SECOND)
+        )
+
+        val request = dlms.setReq(DLMS.IST_DATETIME_NOW, 2.toByte(), 0.toByte(), dateTime, 0)
+
+        if (!bleRepository.writeCharacteristic(request)) {
+            emit(MeterDataResult.Error("Failed to send SET"))
+            return@flow
+        }
+
+        val response = bleRepository.waitForResponse(3000)
+        if (response == null) {
+            emit(MeterDataResult.Error("No response"))
+            return@flow
+        }
+
+        val ret = IntArray(2)
+        dlms.DataRes(ret, response, true)
+
+        Log.d(TAG, "Set clock result: ret[1]=${ret[1]}")
+
+        when {
+            ret[1] != 0 -> emit(MeterDataResult.Error("Error code: ${ret[1]}"))
+            else -> emit(MeterDataResult.Success(arrayListOf("Clock set successfully")))
+        }
+    }
+
+    fun setMeterType(): Flow<MeterDataResult> = flow {
+        emit(MeterDataResult.Loading)
+        Log.d(TAG, "Setting meter type")
+
+        // This needs to cycle through meter type settings (Imp-Exp/ABS/NET)
+        // You may need to read current type first, then set next type
+        val request = dlms.setReq(DLMS.IST_TYPE, 2.toByte(), 0.toByte(), "", 0)
+
+        if (!bleRepository.writeCharacteristic(request)) {
+            emit(MeterDataResult.Error("Failed to send SET"))
+            return@flow
+        }
+
+        val response = bleRepository.waitForResponse(3000)
+        if (response == null) {
+            emit(MeterDataResult.Error("No response"))
+            return@flow
+        }
+
+        val ret = IntArray(2)
+        dlms.DataRes(ret, response, true)
+
+        when {
+            ret[1] != 0 -> emit(MeterDataResult.Error("Error code: ${ret[1]}"))
+            else -> emit(MeterDataResult.Success(arrayListOf("Meter type configured")))
+        }
+    }
+
+    fun wholeClearMeasuredData(): Flow<MeterDataResult> = flow {
+        emit(MeterDataResult.Loading)
+        Log.d(TAG, "Clearing all measured data")
+
+        // Reset absolute energy data
+        val request = dlms.actReq(DLMS.IST_ABS_ENERGY, 1.toByte(), "0f00", 0)
+
+        if (!bleRepository.writeCharacteristic(request)) {
+            emit(MeterDataResult.Error("Failed to send ACTION"))
+            return@flow
+        }
+
+        val response = bleRepository.waitForResponse(3000)
+        if (response == null) {
+            emit(MeterDataResult.Error("No response"))
+            return@flow
+        }
+
+        val ret = IntArray(2)
+        dlms.DataRes(ret, response, true)
+
+        when {
+            ret[1] != 0 -> emit(MeterDataResult.Error("Error code: ${ret[1]}"))
+            else -> emit(MeterDataResult.Success(arrayListOf("All measured data cleared")))
+        }
+    }
+
+    fun setMissingNeutral(enable: Boolean): Flow<MeterDataResult> = flow {
+        emit(MeterDataResult.Loading)
+        Log.d(TAG, "Setting missing neutral detection: $enable")
+
+        // Set missing neutral detection ON/OFF
+        val parameter = if (enable) "01" else "00"
+        val request = dlms.setReq(DLMS.IST_DETECT, 2.toByte(), 0.toByte(), parameter, 0)
+
+        if (!bleRepository.writeCharacteristic(request)) {
+            emit(MeterDataResult.Error("Failed to send SET"))
+            return@flow
+        }
+
+        val response = bleRepository.waitForResponse(3000)
+        if (response == null) {
+            emit(MeterDataResult.Error("No response"))
+            return@flow
+        }
+
+        val ret = IntArray(2)
+        dlms.DataRes(ret, response, true)
+
+        when {
+            ret[1] != 0 -> emit(MeterDataResult.Error("Error code: ${ret[1]}"))
+            else -> emit(MeterDataResult.Success(arrayListOf("Missing neutral ${if (enable) "enabled" else "disabled"}")))
+        }
+    }
+
+    @SuppressLint("DefaultLocale")
+    fun setPowerNetwork(networkType: Int): Flow<MeterDataResult> = flow {
+        emit(MeterDataResult.Loading)
+        Log.d(TAG, "Setting power network type: $networkType")
+
+        // Set power network configuration (1 or 2)
+        val parameter = String.format("%02d", networkType)
+        val request = dlms.setReq(DLMS.IST_MODEL, 2.toByte(), 0.toByte(), parameter, 0)
+
+        if (!bleRepository.writeCharacteristic(request)) {
+            emit(MeterDataResult.Error("Failed to send SET"))
+            return@flow
+        }
+
+        val response = bleRepository.waitForResponse(3000)
+        if (response == null) {
+            emit(MeterDataResult.Error("No response"))
+            return@flow
+        }
+
+        val ret = IntArray(2)
+        dlms.DataRes(ret, response, true)
+
+        when {
+            ret[1] != 0 -> emit(MeterDataResult.Error("Error code: ${ret[1]}"))
+            else -> emit(MeterDataResult.Success(arrayListOf("Power network set to $networkType")))
+        }
+    }
+
+    fun setPotential(): Flow<MeterDataResult> = flow {
+        emit(MeterDataResult.Loading)
+        Log.d(TAG, "Setting potential configuration")
+
+        // Configure potential settings
+        val request = dlms.actReq(DLMS.IST_CAL_VOLTAMP, 1.toByte(), "0f00", 0)
+
+        if (!bleRepository.writeCharacteristic(request)) {
+            emit(MeterDataResult.Error("Failed to send ACTION"))
+            return@flow
+        }
+
+        val response = bleRepository.waitForResponse(3000)
+        if (response == null) {
+            emit(MeterDataResult.Error("No response"))
+            return@flow
+        }
+
+        val ret = IntArray(2)
+        dlms.DataRes(ret, response, true)
+
+        when {
+            ret[1] != 0 -> emit(MeterDataResult.Error("Error code: ${ret[1]}"))
+            else -> emit(MeterDataResult.Success(arrayListOf("Potential configured")))
+        }
+    }
+
+    fun setTypeSet(): Flow<MeterDataResult> = flow {
+        emit(MeterDataResult.Loading)
+        Log.d(TAG, "Setting type configuration")
+
+        // Configure type settings
+        val request = dlms.setReq(DLMS.IST_TYPE, 2.toByte(), 0.toByte(), "", 0)
+
+        if (!bleRepository.writeCharacteristic(request)) {
+            emit(MeterDataResult.Error("Failed to send SET"))
+            return@flow
+        }
+
+        val response = bleRepository.waitForResponse(3000)
+        if (response == null) {
+            emit(MeterDataResult.Error("No response"))
+            return@flow
+        }
+
+        val ret = IntArray(2)
+        dlms.DataRes(ret, response, true)
+
+        when {
+            ret[1] != 0 -> emit(MeterDataResult.Error("Error code: ${ret[1]}"))
+            else -> emit(MeterDataResult.Success(arrayListOf("Type set configured")))
         }
     }
 
