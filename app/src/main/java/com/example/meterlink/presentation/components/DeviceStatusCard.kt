@@ -1,8 +1,13 @@
 package com.example.meterlink.presentation.components
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,15 +31,163 @@ fun DeviceStatusCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // Top row - Device name and status badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = deviceName ?: "No Device",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                // Status badge
+                AssistChip(
+                    onClick = {},
+                    label = {
+                        Text(
+                            when {
+                                isOperationInProgress -> "Processing"
+                                connectionState is BleConnectionState.Connected -> "Connected"
+                                else -> "Disconnected"
+                            },
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    },
+                    leadingIcon = {
+                        if (isOperationInProgress) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = if (connectionState is BleConnectionState.Connected)
+                                    Color(0xFF4CAF50) else Color(0xFFF44336)
+                            )
+                        }
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Device details in grid
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (serialNumber != null) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Serial Number",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            serialNumber,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                if (macAddress != null) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "MAC Address",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            macAddress,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Action button
+            when (connectionState) {
+                is BleConnectionState.Connected -> {
+                    OutlinedButton(
+                        onClick = onDisconnect,
+                        enabled = !isOperationInProgress,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Disconnect", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                else -> {
+                    Button(
+                        onClick = onNavigateHome,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Connect Device", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactDeviceStatusCard(
+    deviceName: String?,
+    serialNumber: String?,
+    macAddress: String?,
+    connectionState: BleConnectionState,
+    isOperationInProgress: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp)
         ) {
-            // Device Name and Serial Number
+            // Device name and status
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -45,97 +198,55 @@ fun DeviceStatusCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                if (serialNumber != null) {
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isOperationInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(12.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(
+                                    if (connectionState is BleConnectionState.Connected)
+                                        Color(0xFF4CAF50) else Color(0xFFF44336),
+                                    CircleShape
+                                )
+                        )
+                    }
                     Text(
-                        text = "S/N: $serialNumber",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium
+                        when {
+                            isOperationInProgress -> "Busy"
+                            connectionState is BleConnectionState.Connected -> "Ready"
+                            else -> "Offline"
+                        },
+                        style = MaterialTheme.typography.labelSmall
                     )
                 }
             }
 
-            // MAC Address
-            if (macAddress != null) {
-                Text(
-                    text = "MAC: $macAddress",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Disconnect Button and Status
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                when (connectionState) {
-                    is BleConnectionState.Connected -> {
-                        Button(
-                            onClick = onDisconnect,
-                            modifier = Modifier.height(36.dp),
-                            enabled = !isOperationInProgress,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error
-                            ),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
-                        ) {
-                            Text("Disconnect", style = MaterialTheme.typography.labelSmall)
-                        }
+            // Serial and MAC in compact format
+            if (serialNumber != null || macAddress != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (serialNumber != null) {
+                        Text(
+                            "S/N: $serialNumber",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    is BleConnectionState.Disconnected, is BleConnectionState.Error -> {
-                        Button(
-                            onClick = onNavigateHome,
-                            modifier = Modifier.height(36.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
-                        ) {
-                            Text("Connect", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                    else -> {
-                        Spacer(modifier = Modifier.width(100.dp))
-                    }
-                }
-
-                // Status Indicator
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    when {
-                        isOperationInProgress -> {
-                            Text("Processing", style = MaterialTheme.typography.bodySmall)
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
-                        }
-                        connectionState is BleConnectionState.Connected -> {
-                            Text("Ready", style = MaterialTheme.typography.bodySmall, color = Color.Green)
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Ready",
-                                tint = Color.Green,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        connectionState is BleConnectionState.Connecting -> {
-                            Text("Connecting", style = MaterialTheme.typography.bodySmall)
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
-                        }
-                        else -> {
-                            Text(
-                                "Disconnected",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
+                    if (macAddress != null) {
+                        Text(
+                            macAddress,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

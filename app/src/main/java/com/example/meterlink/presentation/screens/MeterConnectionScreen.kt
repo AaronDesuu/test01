@@ -36,7 +36,8 @@ fun MeterConnectionScreen(
                 navigateToMaintenance = { currentScreen = "maintenance" },
                 navigateToFactory = { currentScreen = "factory" },
                 navigateToSettings = { currentScreen = "settings" },
-                closeDrawer = { scope.launch { drawerState.close() } }
+                closeDrawer = { scope.launch { drawerState.close() } },
+                connectionViewModel = viewModel
             )
         }
     ) {
