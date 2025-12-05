@@ -11,18 +11,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.meterlink.presentation.components.ConfirmationDialog
 import com.example.meterlink.presentation.components.DeviceStatusCard
+import com.example.meterlink.presentation.viewmodel.FactorySettingViewModel
 import com.example.meterlink.presentation.viewmodel.MeterConnectionViewModel
 
 @SuppressLint("MissingPermission")
 @Composable
 fun FactorySettingScreen(
-    viewModel: MeterConnectionViewModel,
     modifier: Modifier = Modifier,
+    connectionViewModel: MeterConnectionViewModel = hiltViewModel(),
+    factoryViewModel: FactorySettingViewModel = hiltViewModel(),
     onNavigateHome: () -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val connectionState by connectionViewModel.uiState.collectAsState()
+    val factoryState by factoryViewModel.uiState.collectAsState()
 
     Column(
         modifier = modifier
@@ -32,12 +36,12 @@ fun FactorySettingScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         DeviceStatusCard(
-            deviceName = uiState.selectedDevice?.name,
-            serialNumber = uiState.serialNumber,
-            macAddress = uiState.selectedDevice?.address,
-            connectionState = uiState.connectionState,
-            isOperationInProgress = uiState.isOperationInProgress,
-            onDisconnect = { viewModel.disconnect() },
+            deviceName = connectionState.selectedDevice?.name,
+            serialNumber = connectionState.serialNumber,
+            macAddress = connectionState.selectedDevice?.address,
+            connectionState = connectionState.connectionState,
+            isOperationInProgress = factoryState.isOperationInProgress,
+            onDisconnect = { connectionViewModel.disconnect() },
             onNavigateHome = onNavigateHome
         )
 
@@ -58,9 +62,9 @@ fun FactorySettingScreen(
                 )
 
                 Button(
-                    onClick = { viewModel.requestSetMeterType() },
+                    onClick = { factoryViewModel.requestSetMeterType() },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !uiState.isOperationInProgress,
+                    enabled = !factoryState.isOperationInProgress,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.secondary
                     )
@@ -87,9 +91,9 @@ fun FactorySettingScreen(
                 )
 
                 Button(
-                    onClick = { viewModel.requestWholeClear() },
+                    onClick = { factoryViewModel.requestWholeClear() },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !uiState.isOperationInProgress,
+                    enabled = !factoryState.isOperationInProgress,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error
                     )
@@ -135,9 +139,9 @@ fun FactorySettingScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { viewModel.requestMissingNeutralOn() },
+                        onClick = { factoryViewModel.requestMissingNeutralOn() },
                         modifier = Modifier.weight(1f),
-                        enabled = !uiState.isOperationInProgress,
+                        enabled = !factoryState.isOperationInProgress,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.tertiary
                         )
@@ -146,9 +150,9 @@ fun FactorySettingScreen(
                     }
 
                     Button(
-                        onClick = { viewModel.requestMissingNeutralOff() },
+                        onClick = { factoryViewModel.requestMissingNeutralOff() },
                         modifier = Modifier.weight(1f),
-                        enabled = !uiState.isOperationInProgress,
+                        enabled = !factoryState.isOperationInProgress,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.tertiary
                         )
@@ -180,17 +184,17 @@ fun FactorySettingScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { viewModel.requestPowerNetworkOne() },
+                        onClick = { factoryViewModel.requestPowerNetworkOne() },
                         modifier = Modifier.weight(1f),
-                        enabled = !uiState.isOperationInProgress
+                        enabled = !factoryState.isOperationInProgress
                     ) {
                         Text("PN ONE")
                     }
 
                     Button(
-                        onClick = { viewModel.requestPowerNetworkTwo() },
+                        onClick = { factoryViewModel.requestPowerNetworkTwo() },
                         modifier = Modifier.weight(1f),
-                        enabled = !uiState.isOperationInProgress
+                        enabled = !factoryState.isOperationInProgress
                     ) {
                         Text("PN TWO")
                     }
@@ -203,17 +207,17 @@ fun FactorySettingScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { viewModel.requestPotential() },
+                        onClick = { factoryViewModel.requestPotential() },
                         modifier = Modifier.weight(1f),
-                        enabled = !uiState.isOperationInProgress
+                        enabled = !factoryState.isOperationInProgress
                     ) {
                         Text("POTENT")
                     }
 
                     Button(
-                        onClick = { viewModel.requestTypeSet() },
+                        onClick = { factoryViewModel.requestTypeSet() },
                         modifier = Modifier.weight(1f),
-                        enabled = !uiState.isOperationInProgress
+                        enabled = !factoryState.isOperationInProgress
                     ) {
                         Text("TYPSEI")
                     }
@@ -243,7 +247,7 @@ fun FactorySettingScreen(
                         fontWeight = FontWeight.SemiBold
                     )
 
-                    if (uiState.isOperationInProgress) {
+                    if (factoryState.isOperationInProgress) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp
@@ -258,7 +262,7 @@ fun FactorySettingScreen(
                 )
 
                 Text(
-                    text = uiState.lastResponse.ifEmpty { "No operations performed" },
+                    text = factoryState.lastResponse.ifEmpty { "No operations performed" },
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier
                         .fillMaxSize()
@@ -270,12 +274,12 @@ fun FactorySettingScreen(
 
     // Confirmation Dialog
     ConfirmationDialog(
-        showDialog = uiState.dialogState.show,
-        title = uiState.dialogState.title,
-        message = uiState.dialogState.message,
-        confirmText = uiState.dialogState.confirmText,
-        isDestructive = uiState.dialogState.isDestructive,
-        onConfirm = uiState.dialogState.onConfirm,
-        onDismiss = { viewModel.dismissDialog() }
+        showDialog = factoryState.dialogState.show,
+        title = factoryState.dialogState.title,
+        message = factoryState.dialogState.message,
+        confirmText = factoryState.dialogState.confirmText,
+        isDestructive = factoryState.dialogState.isDestructive,
+        onConfirm = factoryState.dialogState.onConfirm,
+        onDismiss = { factoryViewModel.dismissDialog() }
     )
 }

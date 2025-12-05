@@ -16,7 +16,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -28,18 +27,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.meterlink.presentation.components.ConfirmationDialog
 import com.example.meterlink.presentation.components.DeviceStatusCard
+import com.example.meterlink.presentation.viewmodel.MaintenanceViewModel
 import com.example.meterlink.presentation.viewmodel.MeterConnectionViewModel
 
 @SuppressLint("MissingPermission")
 @Composable
 fun MaintenanceScreen(
-    viewModel: MeterConnectionViewModel,
     modifier: Modifier = Modifier,
-    onNavigateHome: () -> Unit
+    connectionViewModel: MeterConnectionViewModel = hiltViewModel(),
+    maintenanceViewModel: MaintenanceViewModel = hiltViewModel(),
+    onNavigateHome: () -> Unit,
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val connectionState by connectionViewModel.uiState.collectAsState()
+    val maintenanceState by maintenanceViewModel.uiState.collectAsState()
 
     Column(
         modifier = modifier
@@ -49,24 +52,18 @@ fun MaintenanceScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         DeviceStatusCard(
-            deviceName = uiState.selectedDevice?.name,
-            serialNumber = uiState.serialNumber,
-            macAddress = uiState.selectedDevice?.address,
-            connectionState = uiState.connectionState,
-            isOperationInProgress = uiState.isOperationInProgress,
-            onDisconnect = { viewModel.disconnect() },
+            deviceName = connectionState.selectedDevice?.name,
+            serialNumber = connectionState.serialNumber,
+            macAddress = connectionState.selectedDevice?.address,
+            connectionState = connectionState.connectionState,
+            isOperationInProgress = maintenanceState.isOperationInProgress,
+            onDisconnect = { connectionViewModel.disconnect() },
             onNavigateHome = onNavigateHome
         )
 
         // System Settings Card
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                 Text(
                     text = "System Settings",
                     style = MaterialTheme.typography.titleMedium,
@@ -75,9 +72,9 @@ fun MaintenanceScreen(
                 )
 
                 Button(
-                    onClick = { viewModel.requestSetClock() },
+                    onClick = { maintenanceViewModel.requestSetClock() },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !uiState.isOperationInProgress,
+                    enabled = !maintenanceState.isOperationInProgress,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.secondary
                     )
@@ -88,14 +85,8 @@ fun MaintenanceScreen(
         }
 
         // Data Reset Operations Card
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                 Text(
                     text = "Data Reset Operations",
                     style = MaterialTheme.typography.titleMedium,
@@ -103,15 +94,14 @@ fun MaintenanceScreen(
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
-                // First Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { viewModel.requestResetBilling() },
+                        onClick = { maintenanceViewModel.requestResetBilling() },
                         modifier = Modifier.weight(1f),
-                        enabled = !uiState.isOperationInProgress,
+                        enabled = !maintenanceState.isOperationInProgress,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error
                         )
@@ -120,9 +110,9 @@ fun MaintenanceScreen(
                     }
 
                     Button(
-                        onClick = { viewModel.requestResetEvent() },
+                        onClick = { maintenanceViewModel.requestResetEvent() },
                         modifier = Modifier.weight(1f),
-                        enabled = !uiState.isOperationInProgress,
+                        enabled = !maintenanceState.isOperationInProgress,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error
                         )
@@ -133,15 +123,14 @@ fun MaintenanceScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Second Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { viewModel.requestResetLoad() },
+                        onClick = { maintenanceViewModel.requestResetLoad() },
                         modifier = Modifier.weight(1f),
-                        enabled = !uiState.isOperationInProgress,
+                        enabled = !maintenanceState.isOperationInProgress,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error
                         )
@@ -150,9 +139,9 @@ fun MaintenanceScreen(
                     }
 
                     Button(
-                        onClick = { viewModel.requestResetAmpere() },
+                        onClick = { maintenanceViewModel.requestResetAmpere() },
                         modifier = Modifier.weight(1f),
-                        enabled = !uiState.isOperationInProgress,
+                        enabled = !maintenanceState.isOperationInProgress,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error
                         )
@@ -161,11 +150,8 @@ fun MaintenanceScreen(
                     }
                 }
 
-                // Warning Text
                 Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                     color = MaterialTheme.colorScheme.errorContainer,
                     shape = MaterialTheme.shapes.small
                 ) {
@@ -180,16 +166,8 @@ fun MaintenanceScreen(
         }
 
         // Operation Log Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(300.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
-            ) {
+        Card(modifier = Modifier.fillMaxWidth().height(300.dp)) {
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -201,7 +179,7 @@ fun MaintenanceScreen(
                         fontWeight = FontWeight.SemiBold
                     )
 
-                    if (uiState.isOperationInProgress) {
+                    if (maintenanceState.isOperationInProgress) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp
@@ -209,18 +187,12 @@ fun MaintenanceScreen(
                     }
                 }
 
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    thickness = DividerDefaults.Thickness,
-                    color = DividerDefaults.color
-                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                 Text(
-                    text = uiState.lastResponse.ifEmpty { "No operations performed" },
+                    text = maintenanceState.lastResponse.ifEmpty { "No operations performed" },
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 )
             }
         }
@@ -228,12 +200,12 @@ fun MaintenanceScreen(
 
     // Confirmation Dialog
     ConfirmationDialog(
-        showDialog = uiState.dialogState.show,
-        title = uiState.dialogState.title,
-        message = uiState.dialogState.message,
-        confirmText = uiState.dialogState.confirmText,
-        isDestructive = uiState.dialogState.isDestructive,
-        onConfirm = uiState.dialogState.onConfirm,
-        onDismiss = { viewModel.dismissDialog() }
+        showDialog = maintenanceState.dialogState.show,
+        title = maintenanceState.dialogState.title,
+        message = maintenanceState.dialogState.message,
+        confirmText = maintenanceState.dialogState.confirmText,
+        isDestructive = maintenanceState.dialogState.isDestructive,
+        onConfirm = maintenanceState.dialogState.onConfirm,
+        onDismiss = { maintenanceViewModel.dismissDialog() }
     )
 }

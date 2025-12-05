@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.meterlink.data.repository.BleConnectionState
 import com.example.meterlink.presentation.components.AppDrawer
+import com.example.meterlink.presentation.components.ConnectionStatusCard
 import com.example.meterlink.presentation.viewmodel.MeterConnectionViewModel
 import kotlinx.coroutines.launch
 
@@ -63,12 +64,14 @@ fun MeterConnectionScreen(
                     modifier = Modifier.padding(padding)
                 )
                 "maintenance" -> MaintenanceScreen(
-                    viewModel = viewModel,
+                    connectionViewModel = viewModel,
+                    maintenanceViewModel = hiltViewModel(),
                     onNavigateHome = { currentScreen = "home" },
                     modifier = Modifier.padding(padding)
                 )
                 "factory" -> FactorySettingScreen(
-                    viewModel = viewModel,
+                    connectionViewModel = viewModel,
+                    factoryViewModel = hiltViewModel(),
                     onNavigateHome = { currentScreen = "home" },
                     modifier = Modifier.padding(padding)
                 )
@@ -191,46 +194,6 @@ fun DeviceInfoCard(device: BluetoothDevice) {
             Spacer(modifier = Modifier.height(8.dp))
             Text("MAC Address", style = MaterialTheme.typography.labelMedium)
             Text(device.address, style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
-
-@Composable
-fun ConnectionStatusCard(state: BleConnectionState) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = when (state) {
-                is BleConnectionState.Connected -> MaterialTheme.colorScheme.primaryContainer
-                is BleConnectionState.Error -> MaterialTheme.colorScheme.errorContainer
-                else -> MaterialTheme.colorScheme.surfaceVariant
-            }
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = when (state) {
-                    is BleConnectionState.Disconnected -> "Disconnected"
-                    is BleConnectionState.Connecting -> "Connecting..."
-                    is BleConnectionState.Connected -> "Connected"
-                    is BleConnectionState.Error -> "Error"
-                },
-                style = MaterialTheme.typography.headlineSmall
-            )
-
-            if (state is BleConnectionState.Error) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = state.message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-            }
         }
     }
 }
