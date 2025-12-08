@@ -9,18 +9,21 @@ import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
@@ -30,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,12 +61,6 @@ fun BleScannerScreen(
     val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     val bluetoothAdapter = bluetoothManager.adapter
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        hasPermissions = permissions.values.all { it }
-    }
-
     val scanCallback = remember {
         object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -83,25 +81,23 @@ fun BleScannerScreen(
         }
     }
 
-    fun startScan() {
-        if (!hasPermissions) {
-            permissionLauncher.launch(getRequiredPermissions())
-            return
+    // Auto-start scan when screen opens
+    LaunchedEffect(hasPermissions) {
+        if (hasPermissions) {
+            eMeterDevices = emptyList()
+            unknownDevices = emptyList()
+            isScanning = true
+            bluetoothAdapter.bluetoothLeScanner.startScan(scanCallback)
         }
-
-        eMeterDevices = emptyList()
-        unknownDevices = emptyList()
-        isScanning = true
-        bluetoothAdapter.bluetoothLeScanner.startScan(scanCallback)
-    }
-
-    fun stopScan() {
-        isScanning = false
-        bluetoothAdapter.bluetoothLeScanner.stopScan(scanCallback)
     }
 
     DisposableEffect(Unit) {
-        onDispose { if (isScanning) stopScan() }
+        onDispose {
+            if (isScanning) {
+                isScanning = false
+                bluetoothAdapter.bluetoothLeScanner.stopScan(scanCallback)
+            }
+        }
     }
 
     Scaffold(
@@ -110,7 +106,10 @@ fun BleScannerScreen(
                 title = { Text("Scan for Meters") },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (isScanning) stopScan()
+                        if (isScanning) {
+                            isScanning = false
+                            bluetoothAdapter.bluetoothLeScanner.stopScan(scanCallback)
+                        }
                         onClose()
                     }) {
                         Text("←")
@@ -124,47 +123,67 @@ fun BleScannerScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            Button(
-                onClick = { if (isScanning) stopScan() else startScan() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Text(if (isScanning) "Stop Scan" else "Start Scan")
-            }
-
             if (!hasPermissions) {
                 Text(
-                    text = "Bluetooth permissions required",
+                    text = "Please grant Bluetooth permissions to scan for devices",
                     modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.error
+                    style = MaterialTheme.typography.bodyMedium
                 )
-            }
-
-            // Tab Row
-            PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
-                Tab(
-                    selected = selectedTabIndex == 0,
-                    onClick = { selectedTabIndex = 0 },
-                    text = { Text("E-Meters (${eMeterDevices.size})") }
-                )
-                Tab(
-                    selected = selectedTabIndex == 1,
-                    onClick = { selectedTabIndex = 1 },
-                    text = { Text("Unknown (${unknownDevices.size})") }
-                )
-            }
-
-            // Device List based on selected tab
-            val displayDevices = if (selectedTabIndex == 0) eMeterDevices else unknownDevices
-
-            LazyColumn {
-                items(displayDevices) { device ->
-                    DeviceListItem(device) {
-                        stopScan()
-                        onDeviceSelected(device)
-                        onClose()
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    PrimaryTabRow(
+                        selectedTabIndex = selectedTabIndex,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Tab(
+                            selected = selectedTabIndex == 0,
+                            onClick = { selectedTabIndex = 0 },
+                            text = { Text("E-Meters (${eMeterDevices.size})") }
+                        )
+                        Tab(
+                            selected = selectedTabIndex == 1,
+                            onClick = { selectedTabIndex = 1 },
+                            text = { Text("Unknown (${unknownDevices.size})") }
+                        )
                     }
+
+                    IconButton(
+                        onClick = {
+                            eMeterDevices = emptyList()
+                            unknownDevices = emptyList()
+                            isScanning = true
+                            bluetoothAdapter.bluetoothLeScanner.startScan(scanCallback)
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh"
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            isScanning = false
+                            bluetoothAdapter.bluetoothLeScanner.stopScan(scanCallback)
+                        },
+                        enabled = isScanning
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Stop Scan"
+                        )
+                    }
+                }
+
+                when (selectedTabIndex) {
+                    0 -> DeviceList(devices = eMeterDevices, onDeviceSelected = onDeviceSelected)
+                    1 -> DeviceList(devices = unknownDevices, onDeviceSelected = onDeviceSelected)
                 }
             }
         }
@@ -173,34 +192,38 @@ fun BleScannerScreen(
 
 @SuppressLint("MissingPermission")
 @Composable
-fun DeviceListItem(device: BluetoothDevice, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clickable(onClick = onClick)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = device.name ?: "Unknown Device",
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = device.address,
-                style = MaterialTheme.typography.bodySmall
-            )
-            Text(
-                text = "Type: ${device.type}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary
-            )
+private fun DeviceList(
+    devices: List<BluetoothDevice>,
+    onDeviceSelected: (BluetoothDevice) -> Unit
+) {
+    if (devices.isEmpty()) {
+        Text(
+            text = "No devices found",
+            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.bodyMedium
+        )
+    } else {
+        LazyColumn {
+            items(devices) { device ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clickable { onDeviceSelected(device) }
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = device.name ?: "Unknown Device",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = device.address,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
         }
-    }
-}
-
-private fun checkPermissions(context: Context): Boolean {
-    return getRequiredPermissions().all { permission ->
-        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     }
 }
 
@@ -217,5 +240,11 @@ private fun getRequiredPermissions(): Array<String> {
             Manifest.permission.BLUETOOTH_ADMIN,
             Manifest.permission.ACCESS_FINE_LOCATION
         )
+    }
+}
+
+private fun checkPermissions(context: Context): Boolean {
+    return getRequiredPermissions().all {
+        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
 }
