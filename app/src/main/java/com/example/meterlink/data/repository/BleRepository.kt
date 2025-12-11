@@ -11,8 +11,9 @@ import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 
@@ -36,11 +37,20 @@ class BleRepository(private val context: Context) {
     private val WRITE_UUID = "e973f2e2-b19e-11e2-9e96-0800200c9a66"
     private val CCCD_UUID = "00002902-0000-1000-8000-00805f9b34fb"
 
-    private val _dataChannel = Channel<ByteArray>(Channel.UNLIMITED)
-    private val connectionState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
+    private var _dataChannel = Channel<ByteArray>(Channel.UNLIMITED)
+    private val _connectionState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
+    val connectionState: StateFlow<BleConnectionState> = _connectionState.asStateFlow()
 
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.e(TAG, "Connection state change failed with status: $status")
+                _connectionState.value = BleConnectionState.Error("Connection failed (error $status)")
+                gatt?.close()
+                bluetoothGatt = null
+                return
+            }
+
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     Log.d(TAG, "Connected, discovering services...")
@@ -49,7 +59,9 @@ class BleRepository(private val context: Context) {
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.d(TAG, "Disconnected")
-                    connectionState.value = BleConnectionState.Disconnected
+                    _connectionState.value = BleConnectionState.Disconnected
+                    gatt?.close()
+                    bluetoothGatt = null
                 }
             }
         }
@@ -76,7 +88,7 @@ class BleRepository(private val context: Context) {
 
         override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
             Log.d(TAG, "MTU changed to $mtu")
-            connectionState.value = BleConnectionState.Connected
+            _connectionState.value = BleConnectionState.Connected
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt?, characteristic: BluetoothGattCharacteristic?) {
@@ -96,10 +108,12 @@ class BleRepository(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun connectToDevice(device: BluetoothDevice): Flow<BleConnectionState> {
-        connectionState.value = BleConnectionState.Connecting
+    fun connectToDevice(device: BluetoothDevice) {
+        _connectionState.value = BleConnectionState.Connecting
+        // Clear old data channel and create a fresh one for new connection
+        _dataChannel.close()
+        _dataChannel = Channel(Channel.UNLIMITED)
         device.connectGatt(context, false, gattCallback)
-        return connectionState
     }
 
     @SuppressLint("MissingPermission")

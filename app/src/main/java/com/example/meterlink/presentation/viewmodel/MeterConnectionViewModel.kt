@@ -49,17 +49,40 @@ class MeterConnectionViewModel @Inject constructor(
     val uiState: StateFlow<MeterConnectionUiState> = _uiState.asStateFlow()
 
     private var currentReadJob: Job? = null
+    private var connectionObserverJob: Job? = null
     private val operationMutex = Mutex()
+
+    init {
+        observeConnectionState()
+    }
+
+    private fun observeConnectionState() {
+        connectionObserverJob?.cancel()
+        connectionObserverJob = viewModelScope.launch {
+            bleRepository.connectionState.collect { state ->
+                _uiState.update { it.copy(connectionState = state) }
+
+                // Reset DLMS state on disconnect
+                if (state is BleConnectionState.Disconnected || state is BleConnectionState.Error) {
+                    _uiState.update { it.copy(isDlmsConnected = false, serialNumber = null) }
+                }
+            }
+        }
+    }
 
     fun connectToDevice(device: BluetoothDevice) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(selectedDevice = device)
+            _uiState.update { it.copy(selectedDevice = device) }
+            bleRepository.connectToDevice(device)
 
-            bleRepository.connectToDevice(device).collect { state ->
-                _uiState.value = _uiState.value.copy(connectionState = state)
-
+            // Wait for BLE connection then establish DLMS
+            bleRepository.connectionState.collect { state ->
                 if (state is BleConnectionState.Connected) {
                     establishDlmsConnection()
+                    return@collect
+                }
+                if (state is BleConnectionState.Error) {
+                    return@collect
                 }
             }
         }
@@ -89,7 +112,7 @@ class MeterConnectionViewModel @Inject constructor(
         }
     }
 
-    private fun fetchSerialNumber() {
+    fun fetchSerialNumber() {
         viewModelScope.launch {
             dlmsRepository.readSerialNumber().collect { result ->
                 if (result is DlmsRepository.MeterDataResult.Success && result.data.size > 1) {
@@ -160,16 +183,16 @@ class MeterConnectionViewModel @Inject constructor(
             .format(java.util.Date())
     }
 
-    fun readMeasure() {
+    private fun readMeterData(objectIndex: Int, loadingMessage: String) {
         currentReadJob?.cancel()
         currentReadJob = viewModelScope.launch {
             _uiState.update { it.copy(isOperationInProgress = true) }
 
             operationMutex.withLock {
-                dlmsRepository.readMeterData(85, 2).collect { result ->
+                dlmsRepository.readMeterData(objectIndex, 2).collect { result ->
                     when (result) {
                         is DlmsRepository.MeterDataResult.Loading -> {
-                            _uiState.update { it.copy(lastResponse = "Loading...") }
+                            _uiState.update { it.copy(lastResponse = loadingMessage) }
                         }
                         is DlmsRepository.MeterDataResult.Partial -> {
                             _uiState.update { it.copy(lastResponse = result.data.joinToString("\n")) }
@@ -196,184 +219,17 @@ class MeterConnectionViewModel @Inject constructor(
         }
     }
 
-    fun readState() {
-        currentReadJob?.cancel()
-        currentReadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
+    fun readMeasure() = readMeterData(85, "Loading...")
 
-            operationMutex.withLock {
-                dlmsRepository.readMeterData(DLMS.IST_SPECIFICATION, 2).collect { result ->
-                    when (result) {
-                        is DlmsRepository.MeterDataResult.Loading -> {
-                            _uiState.update { it.copy(lastResponse = "Loading state...") }
-                        }
-                        is DlmsRepository.MeterDataResult.Partial -> {
-                            _uiState.update { it.copy(lastResponse = result.data.joinToString("\n")) }
-                        }
-                        is DlmsRepository.MeterDataResult.Success -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = result.data.joinToString("\n"),
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                        is DlmsRepository.MeterDataResult.Error -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = "Error: ${result.message}",
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    fun readBilling() {
-        currentReadJob?.cancel()
-        currentReadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
+    fun readState() = readMeterData(DLMS.IST_SPECIFICATION, "Loading state...")
 
-            operationMutex.withLock {
-                dlmsRepository.readMeterData(DLMS.IST_BILLING_PARAMS, 2).collect { result ->
-                    when (result) {
-                        is DlmsRepository.MeterDataResult.Loading -> {
-                            _uiState.update { it.copy(lastResponse = "Loading billing data...") }
-                        }
-                        is DlmsRepository.MeterDataResult.Partial -> {
-                            _uiState.update { it.copy(lastResponse = result.data.joinToString("\n")) }
-                        }
-                        is DlmsRepository.MeterDataResult.Success -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = result.data.joinToString("\n"),
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                        is DlmsRepository.MeterDataResult.Error -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = "Error: ${result.message}",
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    fun readBilling() = readMeterData(DLMS.IST_BILLING_PARAMS, "Loading billing data...")
 
-    fun readEvent() {
-        currentReadJob?.cancel()
-        currentReadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
+    fun readEvent() = readMeterData(DLMS.IST_POWER_QUALITY, "Loading power quality events...")
 
-            operationMutex.withLock {
-                dlmsRepository.readMeterData(DLMS.IST_POWER_QUALITY, 2).collect { result ->
-                    when (result) {
-                        is DlmsRepository.MeterDataResult.Loading -> {
-                            _uiState.update { it.copy(lastResponse = "Loading power quality events...") }
-                        }
-                        is DlmsRepository.MeterDataResult.Partial -> {
-                            _uiState.update { it.copy(lastResponse = result.data.joinToString("\n")) }
-                        }
-                        is DlmsRepository.MeterDataResult.Success -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = result.data.joinToString("\n"),
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                        is DlmsRepository.MeterDataResult.Error -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = "Error: ${result.message}",
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    fun readLoad() = readMeterData(DLMS.IST_LOAD_PROFILE, "Loading load profile...")
 
-    fun readLoad() {
-        currentReadJob?.cancel()
-        currentReadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-
-            operationMutex.withLock {
-                dlmsRepository.readMeterData(DLMS.IST_LOAD_PROFILE, 2).collect { result ->
-                    when (result) {
-                        is DlmsRepository.MeterDataResult.Loading -> {
-                            _uiState.update { it.copy(lastResponse = "Loading load profile...") }
-                        }
-                        is DlmsRepository.MeterDataResult.Partial -> {
-                            _uiState.update { it.copy(lastResponse = result.data.joinToString("\n")) }
-                        }
-                        is DlmsRepository.MeterDataResult.Success -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = result.data.joinToString("\n"),
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                        is DlmsRepository.MeterDataResult.Error -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = "Error: ${result.message}",
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fun readAmpere() {
-        currentReadJob?.cancel()
-        currentReadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
-
-            operationMutex.withLock {
-                dlmsRepository.readMeterData(DLMS.IST_AMPR_RECORD, 2).collect { result ->
-                    when (result) {
-                        is DlmsRepository.MeterDataResult.Loading -> {
-                            _uiState.update { it.copy(lastResponse = "Loading current profile...") }
-                        }
-                        is DlmsRepository.MeterDataResult.Partial -> {
-                            _uiState.update { it.copy(lastResponse = result.data.joinToString("\n")) }
-                        }
-                        is DlmsRepository.MeterDataResult.Success -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = result.data.joinToString("\n"),
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                        is DlmsRepository.MeterDataResult.Error -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = "Error: ${result.message}",
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    fun readAmpere() = readMeterData(DLMS.IST_AMPR_RECORD, "Loading current profile...")
 
     fun updateSettings(account: String, password: String, address: String, rank: String, scan: String, tick: String, interval: String) {
         dlmsRepository.updateSettings(account, password, address, rank, scan, tick, interval)

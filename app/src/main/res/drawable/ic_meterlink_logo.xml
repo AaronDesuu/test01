@@ -4,7 +4,19 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Stylized lightning bolt - main shape (centered for adaptive icon safe zone) -->
+    <!-- Background circle with gradient effect -->
+    <path
+        android:pathData="M54,10 A44,44 0 1,1 53.99,10"
+        android:fillColor="#1E3A5F"/>
+
+    <!-- Inner ring suggesting meter/connection -->
+    <path
+        android:pathData="M54,18 A36,36 0 1,1 53.99,18"
+        android:strokeColor="#3B82F6"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"/>
+
+    <!-- Stylized lightning bolt - main shape -->
     <path
         android:pathData="M62,28 L48,52 L56,52 L46,80 L70,48 L60,48 L70,28 Z"
         android:fillColor="#FBBF24"/>
@@ -17,35 +29,21 @@
     <!-- Connection dots around the bolt -->
     <path
         android:pathData="M30,54 A4,4 0 1,1 29.99,54"
-        android:fillColor="#60A5FA"/>
+        android:fillColor="#3B82F6"/>
     <path
         android:pathData="M78,54 A4,4 0 1,1 77.99,54"
-        android:fillColor="#60A5FA"/>
+        android:fillColor="#3B82F6"/>
 
     <!-- Connection arc lines suggesting wireless/BLE -->
     <path
         android:pathData="M26,42 Q20,54 26,66"
-        android:strokeColor="#60A5FA"
-        android:strokeWidth="2.5"
-        android:fillColor="#00000000"
-        android:strokeLineCap="round"/>
-    <path
-        android:pathData="M82,42 Q88,54 82,66"
-        android:strokeColor="#60A5FA"
-        android:strokeWidth="2.5"
-        android:fillColor="#00000000"
-        android:strokeLineCap="round"/>
-
-    <!-- Outer connection arcs -->
-    <path
-        android:pathData="M22,36 Q14,54 22,72"
-        android:strokeColor="#93C5FD"
+        android:strokeColor="#3B82F6"
         android:strokeWidth="2"
         android:fillColor="#00000000"
         android:strokeLineCap="round"/>
     <path
-        android:pathData="M86,36 Q94,54 86,72"
-        android:strokeColor="#93C5FD"
+        android:pathData="M82,42 Q88,54 82,66"
+        android:strokeColor="#3B82F6"
         android:strokeWidth="2"
         android:fillColor="#00000000"
         android:strokeLineCap="round"/>
