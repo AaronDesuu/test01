@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,15 +68,23 @@ class BleRepository(private val context: Context) {
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d(TAG, "Services discovered, enabling notifications")
-                val service = gatt?.getService(UUID.fromString(SERVICE_UUID))
-                val characteristic = service?.getCharacteristic(UUID.fromString(READ_UUID))
-                val descriptor = characteristic?.getDescriptor(UUID.fromString(CCCD_UUID))
+            if (status != BluetoothGatt.GATT_SUCCESS) return
+            Log.d(TAG, "Services discovered, enabling notifications")
+            gatt ?: return
+            val service = gatt.getService(UUID.fromString(SERVICE_UUID)) ?: return
+            val characteristic = service.getCharacteristic(UUID.fromString(READ_UUID)) ?: return
+            val descriptor = characteristic.getDescriptor(UUID.fromString(CCCD_UUID)) ?: return
 
-                gatt?.setCharacteristicNotification(characteristic, true)
-                descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                gatt?.writeDescriptor(descriptor)
+            gatt.setCharacteristicNotification(characteristic, true)
+            val value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.writeDescriptor(descriptor, value)
+            } else {
+                @Suppress("DEPRECATION")
+                run {
+                    descriptor.value = value
+                    gatt.writeDescriptor(descriptor)
+                }
             }
         }
 
@@ -91,11 +100,23 @@ class BleRepository(private val context: Context) {
             _connectionState.value = BleConnectionState.Connected
         }
 
-        override fun onCharacteristicChanged(gatt: BluetoothGatt?, characteristic: BluetoothGattCharacteristic?) {
-            characteristic?.value?.let { data ->
-                Log.d(TAG, "Data received: ${data.size} bytes - ${data.joinToString("") { "%02x".format(it) }}")
-                _dataChannel.trySend(data)
-            }
+        // API 33+ delivers the value as a parameter; pre-33 still calls the legacy
+        // override that reads characteristic.value. Both funnel into onDataReceived.
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray
+        ) {
+            onDataReceived(value)
+        }
+
+        @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt?,
+            characteristic: BluetoothGattCharacteristic?
+        ) {
+            // Pre-API-33 callback; API 33+ goes through the three-arg override above.
+            characteristic?.value?.let(::onDataReceived)
         }
 
         override fun onCharacteristicWrite(
@@ -107,13 +128,20 @@ class BleRepository(private val context: Context) {
         }
     }
 
+    private fun onDataReceived(data: ByteArray) {
+        Log.d(TAG, "Data received: ${data.size} bytes - ${data.joinToString("") { "%02x".format(it) }}")
+        _dataChannel.trySend(data)
+    }
+
     @SuppressLint("MissingPermission")
     fun connectToDevice(device: BluetoothDevice) {
         _connectionState.value = BleConnectionState.Connecting
         // Clear old data channel and create a fresh one for new connection
         _dataChannel.close()
         _dataChannel = Channel(Channel.UNLIMITED)
-        device.connectGatt(context, false, gattCallback)
+        // Stash the gatt immediately so an early disconnect() can clean it up
+        // even if STATE_CONNECTED hasn't arrived yet.
+        bluetoothGatt = device.connectGatt(context, false, gattCallback)
     }
 
     @SuppressLint("MissingPermission")
@@ -124,18 +152,19 @@ class BleRepository(private val context: Context) {
 
         Log.d(TAG, "Writing ${data.size} bytes")
 
-        // Use modern API (Android 13+)
-        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             gatt.writeCharacteristic(
                 characteristic,
                 data,
                 BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
             ) == BluetoothStatusCodes.SUCCESS
         } else {
-            // Fallback for older Android
-            characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            characteristic.value = data
-            gatt.writeCharacteristic(characteristic)
+            @Suppress("DEPRECATION")
+            run {
+                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                characteristic.value = data
+                gatt.writeCharacteristic(characteristic)
+            }
         }
     }
 
@@ -147,8 +176,8 @@ class BleRepository(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun disconnect() {
+        // Just request disconnect; onConnectionStateChange will close() and null out
+        // bluetoothGatt when STATE_DISCONNECTED arrives.
         bluetoothGatt?.disconnect()
-        bluetoothGatt?.close()
-        bluetoothGatt = null
     }
 }

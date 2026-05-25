@@ -3,6 +3,7 @@ package com.example.meterlink.presentation.viewmodel
 import android.bluetooth.BluetoothDevice
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.meterlink.data.export.OperationType
 import com.example.meterlink.data.repository.BleConnectionState
 import com.example.meterlink.data.repository.BleRepository
 import com.example.meterlink.data.repository.ConnectionProgress
@@ -13,10 +14,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 data class MeterConnectionUiState(
@@ -25,6 +25,7 @@ data class MeterConnectionUiState(
     val isDlmsConnected: Boolean = false,
     val statusMessage: String = "",
     val lastResponse: String = "",
+    val lastOperation: OperationType? = null,
     val dialogState: DialogState = DialogState(),
     val isOperationInProgress: Boolean = false,
     val serialNumber: String? = null
@@ -50,7 +51,6 @@ class MeterConnectionViewModel @Inject constructor(
 
     private var currentReadJob: Job? = null
     private var connectionObserverJob: Job? = null
-    private val operationMutex = Mutex()
 
     init {
         observeConnectionState()
@@ -75,15 +75,11 @@ class MeterConnectionViewModel @Inject constructor(
             _uiState.update { it.copy(selectedDevice = device) }
             bleRepository.connectToDevice(device)
 
-            // Wait for BLE connection then establish DLMS
-            bleRepository.connectionState.collect { state ->
-                if (state is BleConnectionState.Connected) {
-                    establishDlmsConnection()
-                    return@collect
-                }
-                if (state is BleConnectionState.Error) {
-                    return@collect
-                }
+            val terminal = bleRepository.connectionState.first {
+                it is BleConnectionState.Connected || it is BleConnectionState.Error
+            }
+            if (terminal is BleConnectionState.Connected) {
+                establishDlmsConnection()
             }
         }
     }
@@ -183,35 +179,39 @@ class MeterConnectionViewModel @Inject constructor(
             .format(java.util.Date())
     }
 
-    private fun readMeterData(objectIndex: Int, loadingMessage: String) {
+    private fun readMeterData(
+        objectIndex: Int,
+        operation: OperationType,
+        loadingMessage: String,
+    ) {
         currentReadJob?.cancel()
         currentReadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isOperationInProgress = true) }
+            // Clear stale operation tag so "Save Log" disables while a new read is mid-flight.
+            _uiState.update { it.copy(isOperationInProgress = true, lastOperation = null) }
 
-            operationMutex.withLock {
-                dlmsRepository.readMeterData(objectIndex, 2).collect { result ->
-                    when (result) {
-                        is DlmsRepository.MeterDataResult.Loading -> {
-                            _uiState.update { it.copy(lastResponse = loadingMessage) }
+            dlmsRepository.readMeterData(objectIndex, 2).collect { result ->
+                when (result) {
+                    is DlmsRepository.MeterDataResult.Loading -> {
+                        _uiState.update { it.copy(lastResponse = loadingMessage) }
+                    }
+                    is DlmsRepository.MeterDataResult.Partial -> {
+                        _uiState.update { it.copy(lastResponse = result.data.joinToString("\n")) }
+                    }
+                    is DlmsRepository.MeterDataResult.Success -> {
+                        _uiState.update {
+                            it.copy(
+                                lastResponse = result.data.joinToString("\n"),
+                                lastOperation = operation,
+                                isOperationInProgress = false
+                            )
                         }
-                        is DlmsRepository.MeterDataResult.Partial -> {
-                            _uiState.update { it.copy(lastResponse = result.data.joinToString("\n")) }
-                        }
-                        is DlmsRepository.MeterDataResult.Success -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = result.data.joinToString("\n"),
-                                    isOperationInProgress = false
-                                )
-                            }
-                        }
-                        is DlmsRepository.MeterDataResult.Error -> {
-                            _uiState.update {
-                                it.copy(
-                                    lastResponse = "Error: ${result.message}",
-                                    isOperationInProgress = false
-                                )
-                            }
+                    }
+                    is DlmsRepository.MeterDataResult.Error -> {
+                        _uiState.update {
+                            it.copy(
+                                lastResponse = "Error: ${result.message}",
+                                isOperationInProgress = false
+                            )
                         }
                     }
                 }
@@ -219,17 +219,21 @@ class MeterConnectionViewModel @Inject constructor(
         }
     }
 
-    fun readMeasure() = readMeterData(85, "Loading...")
+    fun readMeasure() = readMeterData(85, OperationType.MEASURE, "Loading...")
 
-    fun readState() = readMeterData(DLMS.IST_SPECIFICATION, "Loading state...")
+    fun readState() = readMeterData(DLMS.IST_SPECIFICATION, OperationType.STATE, "Loading state...")
 
-    fun readBilling() = readMeterData(DLMS.IST_BILLING_PARAMS, "Loading billing data...")
+    fun readBilling() =
+        readMeterData(DLMS.IST_BILLING_PARAMS, OperationType.BILLING, "Loading billing data...")
 
-    fun readEvent() = readMeterData(DLMS.IST_POWER_QUALITY, "Loading power quality events...")
+    fun readEvent() =
+        readMeterData(DLMS.IST_POWER_QUALITY, OperationType.EVENT, "Loading power quality events...")
 
-    fun readLoad() = readMeterData(DLMS.IST_LOAD_PROFILE, "Loading load profile...")
+    fun readLoad() =
+        readMeterData(DLMS.IST_LOAD_PROFILE, OperationType.LOAD, "Loading load profile...")
 
-    fun readAmpere() = readMeterData(DLMS.IST_AMPR_RECORD, "Loading current profile...")
+    fun readAmpere() =
+        readMeterData(DLMS.IST_AMPR_RECORD, OperationType.AMPERE, "Loading current profile...")
 
     fun updateSettings(account: String, password: String, address: String, rank: String, scan: String, tick: String, interval: String) {
         dlmsRepository.updateSettings(account, password, address, rank, scan, tick, interval)

@@ -2,25 +2,32 @@ package com.example.meterlink.presentation.screens
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -34,11 +41,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -58,8 +67,24 @@ fun BleScannerScreen(
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var hasPermissions by remember { mutableStateOf(checkPermissions(context)) }
 
-    val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-    val bluetoothAdapter = bluetoothManager.adapter
+    val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+    val bluetoothAdapter = bluetoothManager?.adapter
+    var isBluetoothEnabled by remember { mutableStateOf(bluetoothAdapter?.isEnabled == true) }
+    val canScan by remember(hasPermissions, isBluetoothEnabled) {
+        derivedStateOf { hasPermissions && isBluetoothEnabled && bluetoothAdapter?.bluetoothLeScanner != null }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        hasPermissions = checkPermissions(context)
+    }
+
+    val enableBluetoothLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        isBluetoothEnabled = bluetoothAdapter?.isEnabled == true
+    }
 
     val scanCallback = remember {
         object : ScanCallback() {
@@ -81,13 +106,20 @@ fun BleScannerScreen(
         }
     }
 
-    // Auto-start scan when screen opens
-    LaunchedEffect(hasPermissions) {
-        if (hasPermissions) {
+    // Request permissions on first composition if missing.
+    LaunchedEffect(Unit) {
+        if (!hasPermissions) {
+            permissionLauncher.launch(getRequiredPermissions())
+        }
+    }
+
+    // Auto-start scan once we have permissions and Bluetooth is on.
+    LaunchedEffect(canScan) {
+        if (canScan) {
             eMeterDevices = emptyList()
             unknownDevices = emptyList()
             isScanning = true
-            bluetoothAdapter.bluetoothLeScanner.startScan(scanCallback)
+            bluetoothAdapter?.bluetoothLeScanner?.startScan(scanCallback)
         }
     }
 
@@ -95,7 +127,7 @@ fun BleScannerScreen(
         onDispose {
             if (isScanning) {
                 isScanning = false
-                bluetoothAdapter.bluetoothLeScanner.stopScan(scanCallback)
+                bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
             }
         }
     }
@@ -108,7 +140,7 @@ fun BleScannerScreen(
                     IconButton(onClick = {
                         if (isScanning) {
                             isScanning = false
-                            bluetoothAdapter.bluetoothLeScanner.stopScan(scanCallback)
+                            bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
                         }
                         onClose()
                     }) {
@@ -123,69 +155,110 @@ fun BleScannerScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (!hasPermissions) {
-                Text(
-                    text = "Please grant Bluetooth permissions to scan for devices",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                ) {
-                    PrimaryTabRow(
-                        selectedTabIndex = selectedTabIndex,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Tab(
-                            selected = selectedTabIndex == 0,
-                            onClick = { selectedTabIndex = 0 },
-                            text = { Text("E-Meters (${eMeterDevices.size})") }
-                        )
-                        Tab(
-                            selected = selectedTabIndex == 1,
-                            onClick = { selectedTabIndex = 1 },
-                            text = { Text("Unknown (${unknownDevices.size})") }
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            eMeterDevices = emptyList()
-                            unknownDevices = emptyList()
-                            isScanning = true
-                            bluetoothAdapter.bluetoothLeScanner.startScan(scanCallback)
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh"
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            isScanning = false
-                            bluetoothAdapter.bluetoothLeScanner.stopScan(scanCallback)
-                        },
-                        enabled = isScanning
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Stop Scan"
-                        )
-                    }
+            when {
+                bluetoothAdapter == null -> {
+                    BlockingMessage(
+                        message = "This device does not support Bluetooth."
+                    )
                 }
+                !hasPermissions -> {
+                    BlockingMessage(
+                        message = "Bluetooth permissions are required to scan for meters.",
+                        actionLabel = "Grant permissions",
+                        onAction = { permissionLauncher.launch(getRequiredPermissions()) }
+                    )
+                }
+                !isBluetoothEnabled -> {
+                    BlockingMessage(
+                        message = "Bluetooth is turned off.",
+                        actionLabel = "Turn on Bluetooth",
+                        onAction = {
+                            enableBluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+                        }
+                    )
+                }
+                else -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        PrimaryTabRow(
+                            selectedTabIndex = selectedTabIndex,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Tab(
+                                selected = selectedTabIndex == 0,
+                                onClick = { selectedTabIndex = 0 },
+                                text = { Text("E-Meters (${eMeterDevices.size})") }
+                            )
+                            Tab(
+                                selected = selectedTabIndex == 1,
+                                onClick = { selectedTabIndex = 1 },
+                                text = { Text("Unknown (${unknownDevices.size})") }
+                            )
+                        }
 
-                when (selectedTabIndex) {
-                    0 -> DeviceList(devices = eMeterDevices, onDeviceSelected = onDeviceSelected)
-                    1 -> DeviceList(devices = unknownDevices, onDeviceSelected = onDeviceSelected)
+                        IconButton(
+                            onClick = {
+                                eMeterDevices = emptyList()
+                                unknownDevices = emptyList()
+                                isScanning = true
+                                bluetoothAdapter.bluetoothLeScanner?.startScan(scanCallback)
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh"
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                isScanning = false
+                                bluetoothAdapter.bluetoothLeScanner?.stopScan(scanCallback)
+                            },
+                            enabled = isScanning
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Stop Scan"
+                            )
+                        }
+                    }
+
+                    when (selectedTabIndex) {
+                        0 -> DeviceList(devices = eMeterDevices, onDeviceSelected = onDeviceSelected)
+                        1 -> DeviceList(devices = unknownDevices, onDeviceSelected = onDeviceSelected)
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BlockingMessage(
+    message: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        if (actionLabel != null && onAction != null) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onAction) { Text(actionLabel) }
         }
     }
 }
@@ -241,6 +314,7 @@ private fun getRequiredPermissions(): Array<String> {
             Manifest.permission.ACCESS_FINE_LOCATION
         )
     }
+    
 }
 
 private fun checkPermissions(context: Context): Boolean {

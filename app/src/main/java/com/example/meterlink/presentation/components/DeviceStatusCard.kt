@@ -52,7 +52,7 @@ fun DeviceStatusCard(
                     fontWeight = FontWeight.Bold
                 )
 
-                // Status badge
+                // Status badge — chip background uses theme so it sits on the card naturally
                 AssistChip(
                     onClick = {},
                     label = {
@@ -82,8 +82,10 @@ fun DeviceStatusCard(
                         }
                     },
                     colors = AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    border = null
                 )
             }
 
@@ -99,7 +101,7 @@ fun DeviceStatusCard(
                         Text(
                             "Serial Number",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
                             serialNumber,
@@ -113,7 +115,7 @@ fun DeviceStatusCard(
                         Text(
                             "MAC Address",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
                             macAddress,

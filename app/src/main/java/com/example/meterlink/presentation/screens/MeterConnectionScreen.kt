@@ -19,9 +19,10 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Factory
-import androidx.compose.material.icons.filled.PowerOff
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Speed
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -166,6 +167,30 @@ fun HomeContent(
                         modifier = Modifier.fillMaxWidth(),
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp)
                     ) {
+                      Box(modifier = Modifier.fillMaxWidth()) {
+                        if (uiState.connectionState is BleConnectionState.Connected) {
+                            TextButton(
+                                onClick = { viewModel.disconnect() },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 8.dp, end = 8.dp),
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error
+                                ),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = "Disconnect",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -297,6 +322,7 @@ fun HomeContent(
                                 }
                             }
                         }
+                      }
                     }
 
                     when (uiState.connectionState) {
@@ -373,12 +399,13 @@ fun HomeContent(
                                     modifier = Modifier.weight(1f)
                                 )
                                 QuickActionCard(
-                                    title = "Disconnect",
-                                    icon = Icons.Default.PowerOff,
-                                    onClick = { viewModel.disconnect() },
-                                    modifier = Modifier.weight(1f),
-                                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    title = "Measure",
+                                    icon = Icons.Default.Speed,
+                                    onClick = {
+                                        viewModel.readMeasure()
+                                        onNavigateToOperations()
+                                    },
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }

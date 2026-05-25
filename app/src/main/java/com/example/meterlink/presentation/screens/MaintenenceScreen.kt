@@ -23,13 +23,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.example.meterlink.presentation.components.CollapsibleCard
 import com.example.meterlink.presentation.components.ConfirmationDialog
 import com.example.meterlink.presentation.components.DeviceStatusCard
+import com.example.meterlink.presentation.components.SectionSubheader
 import com.example.meterlink.presentation.viewmodel.MaintenanceViewModel
 import com.example.meterlink.presentation.viewmodel.MeterConnectionViewModel
 
@@ -44,10 +49,12 @@ fun MaintenanceScreen(
     val connectionState by connectionViewModel.uiState.collectAsState()
     val maintenanceState by maintenanceViewModel.uiState.collectAsState()
 
+    // Single collapse for the actions block so the Operation Log can take more space.
+    var actionsExpanded by rememberSaveable { mutableStateOf(true) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -61,112 +68,99 @@ fun MaintenanceScreen(
             onNavigateHome = onNavigateHome
         )
 
-        // System Settings Card
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                Text(
-                    text = "System Settings",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 16.dp)
+        CollapsibleCard(
+            title = "Maintenance Actions",
+            expanded = actionsExpanded,
+            onToggle = { actionsExpanded = !actionsExpanded }
+        ) {
+            // System Settings
+            SectionSubheader("System Settings")
+            Button(
+                onClick = { maintenanceViewModel.requestSetClock() },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !maintenanceState.isOperationInProgress,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary
                 )
+            ) {
+                Text("SET Clock")
+            }
 
+            // Data Reset Operations
+            SectionSubheader("Data Reset Operations")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Button(
-                    onClick = { maintenanceViewModel.requestSetClock() },
-                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { maintenanceViewModel.requestResetBilling() },
+                    modifier = Modifier.weight(1f),
                     enabled = !maintenanceState.isOperationInProgress,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary
+                        containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("SET Clock")
+                    Text("CLR Bill")
+                }
+
+                Button(
+                    onClick = { maintenanceViewModel.requestResetEvent() },
+                    modifier = Modifier.weight(1f),
+                    enabled = !maintenanceState.isOperationInProgress,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("CLR Event")
                 }
             }
-        }
 
-        // Data Reset Operations Card
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { maintenanceViewModel.requestResetLoad() },
+                    modifier = Modifier.weight(1f),
+                    enabled = !maintenanceState.isOperationInProgress,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("CLR Load")
+                }
+
+                Button(
+                    onClick = { maintenanceViewModel.requestResetAmpere() },
+                    modifier = Modifier.weight(1f),
+                    enabled = !maintenanceState.isOperationInProgress,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("CLR Current")
+                }
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = MaterialTheme.shapes.small
+            ) {
                 Text(
-                    text = "Data Reset Operations",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    text = "⚠️ Warning: Reset operations cannot be undone",
+                    modifier = Modifier.padding(8.dp),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodySmall
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = { maintenanceViewModel.requestResetBilling() },
-                        modifier = Modifier.weight(1f),
-                        enabled = !maintenanceState.isOperationInProgress,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("CLR Bill")
-                    }
-
-                    Button(
-                        onClick = { maintenanceViewModel.requestResetEvent() },
-                        modifier = Modifier.weight(1f),
-                        enabled = !maintenanceState.isOperationInProgress,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("CLR Event")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = { maintenanceViewModel.requestResetLoad() },
-                        modifier = Modifier.weight(1f),
-                        enabled = !maintenanceState.isOperationInProgress,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("CLR Load")
-                    }
-
-                    Button(
-                        onClick = { maintenanceViewModel.requestResetAmpere() },
-                        modifier = Modifier.weight(1f),
-                        enabled = !maintenanceState.isOperationInProgress,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("CLR Current")
-                    }
-                }
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Text(
-                        text = "⚠️ Warning: Reset operations cannot be undone",
-                        modifier = Modifier.padding(8.dp),
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
             }
         }
 
-        // Operation Log Card
-        Card(modifier = Modifier.fillMaxWidth().height(300.dp)) {
+        // Operation Log Card — takes remaining space; collapsing the actions
+        // card above lets this card grow to fill the freed area.
+        Card(modifier = Modifier.fillMaxWidth().weight(1f)) {
             Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
