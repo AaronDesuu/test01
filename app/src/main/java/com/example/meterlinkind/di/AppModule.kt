@@ -1,0 +1,46 @@
+package com.example.meterlinkind.di
+
+import android.content.Context
+import com.example.meterlinkind.data.repository.BleRepository
+import com.example.meterlinkind.data.repository.DlmsRepository
+import com.example.meterlinkind.data.repository.SettingsRepository
+import com.example.meterlinkind.dlms.DLMS
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object AppModule {
+
+    @Provides
+    @Singleton
+    fun provideBleRepository(@ApplicationContext context: Context): BleRepository {
+        return BleRepository(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDlmsProtocol(@ApplicationContext context: Context): DLMS {
+        return DLMS(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSettingsRepository(@ApplicationContext context: Context): SettingsRepository {
+        return SettingsRepository(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDlmsRepository(
+        bleRepository: BleRepository,
+        dlms: DLMS,
+        settingsRepository: SettingsRepository
+    ): DlmsRepository {
+        return DlmsRepository(bleRepository, dlms, settingsRepository)
+    }
+}

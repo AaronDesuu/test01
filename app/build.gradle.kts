@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.meterlink"
+    namespace = "com.example.meterlinkind"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.meterlink"
+        applicationId = "com.example.meterlinkind"
         minSdk = 29
         targetSdk = 36
         versionCode = 1
