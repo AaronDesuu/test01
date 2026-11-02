@@ -64,6 +64,7 @@ class MeterConnectionViewModel @Inject constructor(
 
                 // Reset DLMS state on disconnect
                 if (state is BleConnectionState.Disconnected || state is BleConnectionState.Error) {
+                    dlmsRepository.clearAssociation()
                     _uiState.update { it.copy(isDlmsConnected = false, serialNumber = null) }
                 }
             }
@@ -93,15 +94,14 @@ class MeterConnectionViewModel @Inject constructor(
                     }
                     is ConnectionProgress.Connected -> {
                         _uiState.value = _uiState.value.copy(
-                            statusMessage = "DLMS connected",
+                            statusMessage = "Associated as Public (PC)",
                             isDlmsConnected = true
                         )
                         fetchSerialNumber()
                     }
                     is ConnectionProgress.Failed -> {
-                        _uiState.value = _uiState.value.copy(
-                            connectionState = BleConnectionState.Error(progress.message)
-                        )
+                        // Close the GATT too, so "Reconnect" starts from a clean link.
+                        bleRepository.failAndDisconnect(progress.message)
                     }
                 }
             }
@@ -111,10 +111,8 @@ class MeterConnectionViewModel @Inject constructor(
     fun fetchSerialNumber() {
         viewModelScope.launch {
             dlmsRepository.readSerialNumber().collect { result ->
-                if (result is DlmsRepository.MeterDataResult.Success && result.data.size > 1) {
-                    // Index 0 is timestamp, index 1 is "Serial NO: XXXXXXXXXX"
-                    val serialNo = result.data[1].replace("Serial NO: ", "")
-                    _uiState.update { it.copy(serialNumber = serialNo) }
+                if (result is DlmsRepository.MeterDataResult.Success && result.data.isNotEmpty()) {
+                    _uiState.update { it.copy(serialNumber = result.data[0]) }
                 }
             }
         }

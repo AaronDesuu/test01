@@ -13,3 +13,9 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# DA14531 DSPS firmware tree (~128 MB of binaries/IDE files); keep only the C sources
+/app/sampledata/BLref/BLE_FT5AB/**
+!/app/sampledata/BLref/BLE_FT5AB/**/
+!/app/sampledata/BLref/BLE_FT5AB/**/*.c
+!/app/sampledata/BLref/BLE_FT5AB/**/*.h

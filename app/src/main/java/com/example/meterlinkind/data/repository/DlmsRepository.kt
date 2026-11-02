@@ -2,8 +2,21 @@ package com.example.meterlinkind.data.repository
 
 import android.annotation.SuppressLint
 import android.util.Log
+import com.example.meterlinkind.data.protocol.Association
+import com.example.meterlinkind.data.protocol.AssociationResult
+import com.example.meterlinkind.data.protocol.Axdr
+import com.example.meterlinkind.data.protocol.ByteLink
+import com.example.meterlinkind.data.protocol.ClientProfile
+import com.example.meterlinkind.data.protocol.Conformance
+import com.example.meterlinkind.data.protocol.CosemAttribute
+import com.example.meterlinkind.data.protocol.DataAccessResult
+import com.example.meterlinkind.data.protocol.Get
+import com.example.meterlinkind.data.protocol.GetResult
+import com.example.meterlinkind.data.protocol.PublicObjects
+import com.example.meterlinkind.data.protocol.TransportException
+import com.example.meterlinkind.data.protocol.WrapperTransport
+import com.example.meterlinkind.data.protocol.toHex
 import com.example.meterlinkind.dlms.DLMS
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
@@ -17,7 +30,7 @@ class DlmsRepository @Inject constructor(
 ) {
     private val TAG = "DlmsRepository"
 
-    // Serializes every BLE write+wait sequence across the whole app. HDLC is
+    // Serializes every BLE write+wait sequence across the whole app. DLMS is
     // request/response and the data channel is shared, so two operations in
     // flight at once will scramble framing.
     private val operationMutex = Mutex()
@@ -33,123 +46,112 @@ class DlmsRepository @Inject constructor(
         dlms.updateAllMeterInformation()
     }
 
+    /** Client the current association was opened as; only Public (PC) for now. */
+    private val client = ClientProfile.PUBLIC
+
+    private val bleLink = object : ByteLink {
+        override suspend fun send(data: ByteArray) = bleRepository.writeCharacteristic(data)
+        override suspend fun receive(timeoutMs: Long) = bleRepository.waitForResponse(timeoutMs)
+        override fun clear() = bleRepository.clearReceived()
+    }
+
+    private val transport = WrapperTransport(bleLink, client.clientPort)
+
+    /** Result of the last successful AARQ/AARE, or null when not associated. */
+    var association: AssociationResult? = null
+        private set
+
+    /**
+     * Opens a DLMS association (AARQ/AARE); the wrapper has no link-layer step.
+     * As the Public client this is a plain LN context with no authentication
+     * or ciphering.
+     */
     fun establishConnection(): Flow<ConnectionProgress> = flow {
         operationMutex.withLock {
-            Log.d(TAG, "Starting connection with Count=${dlms.Count()}")
-            // Only call changeCurrent if we have data
-            if (dlms.Count() > 0) {
-                dlms.changeCurrent(0)
-            }
-
-            dlms.init(0x06, 0x06, 0x01, 0x01)
-
-            emit(ConnectionProgress.Connecting("Opening HDLC..."))
-            delay(500)
-
-            // Step 0: SNRM
-            val openRequest = dlms.Open()
-            if (!bleRepository.writeCharacteristic(openRequest)) {
-                emit(ConnectionProgress.Failed("Failed to send SNRM"))
+            association = null
+            emit(ConnectionProgress.Connecting("Associating as ${client.label}..."))
+            val aare = try {
+                transport.request(Association.publicRequest())
+            } catch (e: TransportException) {
+                emit(ConnectionProgress.Failed(e.message ?: "No association response"))
                 return@withLock
             }
 
-            // Step 2: Receive UA
-            val openResponse = bleRepository.waitForResponse(3000)
-            if (openResponse == null) {
-                emit(ConnectionProgress.Failed("No UA response"))
+            val result = try {
+                Association.parseResponse(aare)
+            } catch (e: Exception) {
+                Log.e(TAG, "Bad AARE ${aare.toHex()}", e)
+                emit(ConnectionProgress.Failed("Bad association response: ${e.message}"))
+                return@withLock
+            }
+            Log.d(TAG, "AARE: $result")
+
+            if (!result.accepted) {
+                emit(ConnectionProgress.Failed("Association rejected: ${result.reason}"))
                 return@withLock
             }
 
-            Log.d(TAG, "Using rank: ${dlms.getRank(-1)}")
-
-            // Step 2: AARQ
-            val ret = IntArray(2)
-            val sessionRequest = dlms.Session(ret, openResponse)
-
-            if (ret[0] == 0 || sessionRequest == null) {
-                emit(ConnectionProgress.Failed("Failed to create AARQ"))
-                return@withLock
-            }
-
-            if (!bleRepository.writeCharacteristic(sessionRequest)) {
-                emit(ConnectionProgress.Failed("Failed to send AARQ"))
-                return@withLock
-            }
-
-            // Step 4: Receive AARE and check if Challenge needed
-            val sessionResponse = bleRepository.waitForResponse(3000)
-            if (sessionResponse == null) {
-                emit(ConnectionProgress.Failed("No AARE response"))
-                return@withLock
-            }
-
-            Log.d(TAG, "Processing AARE response: ${sessionResponse.size} bytes")
-            val challengeRequest = dlms.Challenge(ret, sessionResponse)
-            Log.d(TAG, "Challenge result: ret[0]=${ret[0]}, request=${challengeRequest?.size ?: "null"}")
-
-            if (ret[0] == 0) {
-                emit(ConnectionProgress.Failed("Failed to process AARE"))
-                return@withLock
-            }
-
-            if (challengeRequest != null) {
-                emit(ConnectionProgress.Connecting("HLS authentication..."))
-
-                if (!bleRepository.writeCharacteristic(challengeRequest)) {
-                    emit(ConnectionProgress.Failed("Failed to send Challenge"))
-                    return@withLock
-                }
-
-                val challengeResponse = bleRepository.waitForResponse(5000)
-                if (challengeResponse == null) {
-                    emit(ConnectionProgress.Failed("No Challenge response"))
-                    return@withLock
-                }
-
-                Log.d(TAG, "Processing Challenge response: ${challengeResponse.size} bytes")
-                dlms.Confirm(ret, challengeResponse)
-                Log.d(TAG, "Confirm result: ret[0]=${ret[0]}")
-
-                if (ret[0] == 0) {
-                    emit(ConnectionProgress.Failed("Failed HLS authentication"))
-                    return@withLock
-                }
-
-                Log.d(TAG, "HLS authentication completed")
-            }
-
+            Log.i(
+                TAG, "Associated as ${client.label}: conformance=" +
+                    "${Conformance.describe(result.negotiatedConformance)}, " +
+                    "server max PDU=${result.serverMaxReceivePdu}"
+            )
+            association = result
             emit(ConnectionProgress.Connected)
         }
     }
 
-    fun readSerialNumber(): Flow<MeterDataResult> = flow {
+    /** Call when the BLE link drops: the meter forgets the association with it. */
+    fun clearAssociation() {
+        association = null
+    }
+
+    fun readSerialNumber(): Flow<MeterDataResult> = readAttribute(PublicObjects.SERIAL_NUMBER)
+
+    /**
+     * GETs one attribute. Emits [MeterDataResult.Success] with a single
+     * display string. Follows Get-Response-With-Datablock if the meter splits
+     * the value, although the Public client isn't granted block transfer.
+     */
+    fun readAttribute(target: CosemAttribute): Flow<MeterDataResult> = flow {
         operationMutex.withLock {
-            Log.d(TAG, "Reading serial number (IST_APPROVAL_NO)")
             emit(MeterDataResult.Loading)
-
-            val request = dlms.getReq(DLMS.IST_APPROVAL_NO, 2, 0, null, 0)
-            Log.d(TAG, "Sending serial number request")
-
-            if (!bleRepository.writeCharacteristic(request)) {
-                Log.e(TAG, "Failed to write serial number request")
-                emit(MeterDataResult.Error("Failed to send request"))
+            if (association == null) {
+                emit(MeterDataResult.Error("Not associated"))
                 return@withLock
             }
+            Log.d(TAG, "GET ${target.name} (class ${target.classId}, ${target.obis}, attr ${target.attribute})")
 
-            val response = bleRepository.waitForResponse(3000)
-            if (response == null) {
-                Log.e(TAG, "No serial number response")
-                emit(MeterDataResult.Error("No response"))
-                return@withLock
-            }
+            try {
+                var response = Get.parseResponse(transport.request(Get.request(target)))
+                val blocks = java.io.ByteArrayOutputStream()
+                while (response is GetResult.Block) {
+                    blocks.write(response.raw)
+                    if (response.last) {
+                        response = GetResult.Data(Axdr.decode(blocks.toByteArray()))
+                        break
+                    }
+                    emit(MeterDataResult.Partial(arrayListOf("Receiving block ${response.blockNumber}...")))
+                    response = Get.parseResponse(transport.request(Get.nextBlock(response.blockNumber)))
+                }
 
-            val ret = IntArray(2)
-            val data = dlms.DataRes(ret, response, true)
-            Log.d(TAG, "Serial number data: ${data.joinToString()}, ret[1]=${ret[1]}")
-
-            when {
-                ret[1] != 0 -> emit(MeterDataResult.Error("Access error: ${ret[1]}"))
-                else -> emit(MeterDataResult.Success(data))
+                when (response) {
+                    is GetResult.Data -> {
+                        val text = response.data.display()
+                        Log.d(TAG, "${target.name} = $text")
+                        emit(MeterDataResult.Success(arrayListOf(text)))
+                    }
+                    is GetResult.AccessError -> emit(MeterDataResult.Error("Access error: ${response.reason}"))
+                    is GetResult.BlockError ->
+                        emit(MeterDataResult.Error("Block ${response.blockNumber} error: ${DataAccessResult.describe(response.code)}"))
+                    is GetResult.ServiceFailure -> emit(MeterDataResult.Error(response.message))
+                    is GetResult.Block -> Unit // unreachable: loop above consumes blocks
+                }
+            } catch (e: TransportException) {
+                emit(MeterDataResult.Error(e.message ?: "No response"))
+            } catch (e: Exception) {
+                Log.e(TAG, "GET ${target.name} failed", e)
+                emit(MeterDataResult.Error("Bad response: ${e.message}"))
             }
         }
     }

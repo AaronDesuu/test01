@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.example.meterlinkind.data.repository.BleRepository
 
 @SuppressLint("MissingPermission")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -90,9 +91,13 @@ fun BleScannerScreen(
         object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device
-                val deviceName = device.name
+                val deviceName = device.name ?: result.scanRecord?.deviceName
+                val advertisesMeterService = result.scanRecord?.serviceUuids
+                    ?.any { it.uuid == BleRepository.ADVERTISED_SERVICE_UUID } == true
 
-                if (deviceName != null && (deviceName.contains("WF"))) {
+                // F5LWF meters advertise the same UUID, so the UUID only counts
+                // when the name is missing from this advertisement.
+                if (deviceName?.contains("FT5AB") == true || (deviceName == null && advertisesMeterService)) {
                     if (!eMeterDevices.contains(device)) {
                         eMeterDevices = eMeterDevices + device
                     }
