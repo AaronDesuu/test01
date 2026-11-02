@@ -8,7 +8,8 @@ sealed class DlmsData {
     /** Every signed/unsigned integer type up to 64 bits; [tag] keeps the wire type. */
     data class Integer(val tag: Int, val value: Long) : DlmsData()
     data class Enum(val value: Int) : DlmsData()
-    data class Float(val value: Double) : DlmsData()
+    /** [singlePrecision] for float32, which displays at its own precision (239.73, not 239.73001098632812). */
+    data class Float(val value: Double, val singlePrecision: Boolean = false) : DlmsData()
     data class OctetString(val bytes: ByteArray) : DlmsData()
     data class VisibleString(val value: String) : DlmsData()
     data class Utf8String(val value: String) : DlmsData()
@@ -24,7 +25,7 @@ sealed class DlmsData {
         is BitString -> bytes.toHex()
         is Integer -> if (tag == Axdr.TAG_UINT64 && value < 0) value.toULong().toString() else value.toString()
         is Enum -> value.toString()
-        is Float -> value.toString()
+        is Float -> if (singlePrecision) value.toFloat().toString() else value.toString()
         is OctetString -> CosemDateTime.formatOrNull(bytes) ?: bytes.printableAsciiOrNull() ?: bytes.toHex()
         is VisibleString -> value
         is Utf8String -> value
@@ -119,7 +120,7 @@ object Axdr {
             TAG_UINT32 -> DlmsData.Integer(tag, uint(4))
             TAG_UINT64 -> DlmsData.Integer(tag, uint(8))
             TAG_ENUM -> DlmsData.Enum(u8())
-            TAG_FLOAT32 -> DlmsData.Float(java.lang.Float.intBitsToFloat(uint(4).toInt()).toDouble())
+            TAG_FLOAT32 -> DlmsData.Float(java.lang.Float.intBitsToFloat(uint(4).toInt()).toDouble(), singlePrecision = true)
             TAG_FLOAT64 -> DlmsData.Float(java.lang.Double.longBitsToDouble(uint(8)))
             TAG_OCTET_STRING -> DlmsData.OctetString(bytes(length()))
             TAG_VISIBLE_STRING -> DlmsData.VisibleString(String(bytes(length()), Charsets.US_ASCII))

@@ -41,6 +41,12 @@ class ObjectsTest {
     }
 
     @Test
+    fun float32DisplaysAtSinglePrecision() {
+        // 239.73 as the meter's block voltage column sends it
+        assertEquals("239.73", Axdr.decode(hex("17 436FBAE1")).display())
+    }
+
+    @Test
     fun setRequestAndResponse() {
         val clock = ObjectRegistry.find(ObisCode.parse("0.0.1.0.0.255"))!!
         val time = ClockValue.encode(LocalDateTime.of(2026, 11, 2, 14, 35, 10), deviation = 0xFEB6, status = 0)
