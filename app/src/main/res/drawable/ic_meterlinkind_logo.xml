@@ -1,51 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
+    android:viewportWidth="72"
+    android:viewportHeight="72">
 
-    <!-- Background circle with gradient effect -->
+    <!-- The launcher icon as one drawable: the visible 72x72 centre of the
+         108 adaptive grid on a rounded blue plate. Keep in step with
+         ic_launcher_foreground.xml. -->
     <path
-        android:pathData="M54,10 A44,44 0 1,1 53.99,10"
-        android:fillColor="#1E3A5F"/>
+        android:pathData="M22,0 H50 A22,22 0 0,1 72,22 V50 A22,22 0 0,1 50,72 H22 A22,22 0 0,1 0,50 V22 A22,22 0 0,1 22,0 Z"
+        android:fillColor="#1D3ECF"/>
 
-    <!-- Inner ring suggesting meter/connection -->
-    <path
-        android:pathData="M54,18 A36,36 0 1,1 53.99,18"
-        android:strokeColor="#3B82F6"
-        android:strokeWidth="2"
-        android:fillColor="#00000000"/>
-
-    <!-- Stylized lightning bolt - main shape -->
-    <path
-        android:pathData="M62,28 L48,52 L56,52 L46,80 L70,48 L60,48 L70,28 Z"
-        android:fillColor="#FBBF24"/>
-
-    <!-- Lightning bolt highlight/shine -->
-    <path
-        android:pathData="M64,32 L54,48 L60,48 L70,32 Z"
-        android:fillColor="#FDE68A"/>
-
-    <!-- Connection dots around the bolt -->
-    <path
-        android:pathData="M30,54 A4,4 0 1,1 29.99,54"
-        android:fillColor="#3B82F6"/>
-    <path
-        android:pathData="M78,54 A4,4 0 1,1 77.99,54"
-        android:fillColor="#3B82F6"/>
-
-    <!-- Connection arc lines suggesting wireless/BLE -->
-    <path
-        android:pathData="M26,42 Q20,54 26,66"
-        android:strokeColor="#3B82F6"
-        android:strokeWidth="2"
-        android:fillColor="#00000000"
-        android:strokeLineCap="round"/>
-    <path
-        android:pathData="M82,42 Q88,54 82,66"
-        android:strokeColor="#3B82F6"
-        android:strokeWidth="2"
-        android:fillColor="#00000000"
-        android:strokeLineCap="round"/>
+    <group
+        android:translateX="-18"
+        android:translateY="-18">
+        <path
+            android:pathData="M39.86,76.14 A20,20 0 1,1 68.14,76.14"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="6"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"/>
+        <path
+            android:pathData="M58.86,34.43 A28,28 0 0,1 78.25,48"
+            android:strokeColor="#FFD27A"
+            android:strokeWidth="3"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"/>
+        <path
+            android:pathData="M59.90,28.52 A34,34 0 0,1 83.44,45"
+            android:strokeColor="#FFE7B0"
+            android:strokeWidth="3"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"/>
+        <path
+            android:pathData="M54,62 L62.03,50.53"
+            android:strokeColor="#FFB61E"
+            android:strokeWidth="5"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"/>
+        <path
+            android:pathData="M49.5,62 A4.5,4.5 0 1,0 58.5,62 A4.5,4.5 0 1,0 49.5,62 Z"
+            android:fillColor="#FFB61E"/>
+    </group>
 
 </vector>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Single-colour gauge for Android 13+ themed icons; only the alpha is used.
+         Everything stays inside the 66dp safe circle around (54,54). -->
+
+    <!-- Dial: radius 20 around (54,62), open at the bottom -->
+    <path
+        android:pathData="M39.86,76.14 A20,20 0 1,1 68.14,76.14"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+
+    <!-- Signal arcs, radius 28 and 34 around the dial centre, -80deg to -30deg -->
+    <path
+        android:pathData="M58.86,34.43 A28,28 0 0,1 78.25,48"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+    <path
+        android:pathData="M59.90,28.52 A34,34 0 0,1 83.44,45"
+        android:strokeColor="#FF000000"
+        android:strokeAlpha="0.7"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+
+    <!-- Needle at -55deg and its hub -->
+    <path
+        android:pathData="M54,62 L62.03,50.53"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"/>
+    <path
+        android:pathData="M49.5,62 A4.5,4.5 0 1,0 58.5,62 A4.5,4.5 0 1,0 49.5,62 Z"
+        android:fillColor="#FF000000"/>
+
+</vector>
