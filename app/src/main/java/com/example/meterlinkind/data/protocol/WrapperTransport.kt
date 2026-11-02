@@ -18,18 +18,31 @@ class WrapperTransport(
 ) {
     private val assembler = WrapperAssembler()
 
+    /** Frames for us that arrived after the one a call returned (streamed GBT blocks). */
+    private val pending = ArrayDeque<WrapperFrame>()
+
     /** Sends one APDU and returns the APDU of the meter's reply. */
     suspend fun request(apdu: ByteArray, timeoutMs: Long = RESPONSE_TIMEOUT_MS): ByteArray {
         link.clear()
         assembler.reset()
+        pending.clear()
         if (!link.send(WrapperCodec.encode(clientPort, apdu))) throw TransportException("Failed to send request")
+        return next(timeoutMs)
+    }
+
+    /** Sends nothing; returns the next APDU the meter sends on its own (the following GBT block). */
+    suspend fun receive(timeoutMs: Long = RESPONSE_TIMEOUT_MS): ByteArray = next(timeoutMs)
+
+    private suspend fun next(timeoutMs: Long): ByteArray {
+        pending.removeFirstOrNull()?.let { return it.apdu }
         var timeout = timeoutMs
         while (true) {
             val chunk = link.receive(timeout) ?: throw TransportException(
                 if (assembler.pendingBytes == 0) "No response from meter"
                 else "Incomplete response (${assembler.pendingBytes} bytes)"
             )
-            assembler.feed(chunk).firstOrNull { it.destinationPort == clientPort }?.let { return it.apdu }
+            pending.addAll(assembler.feed(chunk).filter { it.destinationPort == clientPort })
+            pending.removeFirstOrNull()?.let { return it.apdu }
             timeout = INTER_CHUNK_TIMEOUT_MS
         }
     }

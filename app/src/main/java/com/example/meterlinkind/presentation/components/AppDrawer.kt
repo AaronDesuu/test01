@@ -1,15 +1,22 @@
 package com.example.meterlinkind.presentation.components
 
-import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.DividerDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
@@ -18,110 +25,96 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.meterlinkind.presentation.viewmodel.MeterConnectionViewModel
 
-@SuppressLint("MissingPermission")
+private data class DrawerEntry(val route: String, val label: String, val icon: ImageVector)
+
+private val METER_ENTRIES = listOf(
+    DrawerEntry("home", "Home", Icons.Default.Home),
+    DrawerEntry("profile", "Profile Generic", Icons.Default.TableChart),
+    DrawerEntry("clock", "Clock", Icons.Default.Schedule),
+)
+
+private val ACCOUNT_ENTRIES = listOf(
+    DrawerEntry("keys", "Security Keys", Icons.Default.Key),
+    DrawerEntry("settings", "Settings", Icons.Default.Settings),
+)
+
 @Composable
 fun AppDrawer(
     currentRoute: String,
-    navigateToHome: () -> Unit,
-    navigateToOperations: () -> Unit,
-    navigateToMaintenance: () -> Unit,
-    navigateToFactory: () -> Unit,
-    navigateToSettings: () -> Unit,
+    navigate: (String) -> Unit,
+    logout: () -> Unit,
     closeDrawer: () -> Unit,
     connectionViewModel: MeterConnectionViewModel
 ) {
     val connectionState by connectionViewModel.uiState.collectAsState()
-    Box(modifier = Modifier.width(280.dp)) {
+    Box(modifier = Modifier.width(300.dp)) {
         ModalDrawerSheet {
-            // Drawer Header
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                Text(
-                    text = "Meter Link",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "E-Meter BLE Communication",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
-            Spacer(Modifier.height(12.dp))
-
-            // Device Status Card
-            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                CompactDeviceStatusCard(
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Meter Link",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    connectionState.client?.let { RoleBadge(it) }
+                }
+                connectionState.client?.let {
+                    Text(
+                        text = "Logged in as ${it.label}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                ConnectionStrip(
                     deviceName = connectionState.selectedDeviceName,
                     serialNumber = connectionState.serialNumber,
-                    macAddress = connectionState.selectedDevice?.address,
                     connectionState = connectionState.connectionState,
-                    isOperationInProgress = connectionState.isOperationInProgress
+                    associated = connectionState.isDlmsConnected,
                 )
             }
 
-            HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
-            Spacer(Modifier.height(8.dp))
+            METER_ENTRIES.forEach { DrawerItem(it, currentRoute, navigate, closeDrawer) }
 
-            NavigationDrawerItem(
-                label = { Text("Home") },
-                selected = currentRoute == "home",
-                onClick = {
-                    navigateToHome()
-                    closeDrawer()
-                },
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-            )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
 
+            ACCOUNT_ENTRIES.forEach { DrawerItem(it, currentRoute, navigate, closeDrawer) }
             NavigationDrawerItem(
-                label = { Text("Operations") },
-                selected = currentRoute == "operations",
+                label = { Text("Log Out") },
+                icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
+                selected = false,
                 onClick = {
-                    navigateToOperations()
                     closeDrawer()
-                },
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-            )
-
-            NavigationDrawerItem(
-                label = { Text("Maintenance") },
-                selected = currentRoute == "maintenance",
-                onClick = {
-                    navigateToMaintenance()
-                    closeDrawer()
-                },
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-            )
-
-            NavigationDrawerItem(
-                label = { Text("Factory Setting") },
-                selected = currentRoute == "factory",
-                onClick = {
-                    navigateToFactory()
-                    closeDrawer()
-                },
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-            )
-
-            NavigationDrawerItem(
-                label = { Text("Settings") },
-                selected = currentRoute == "settings",
-                onClick = {
-                    navigateToSettings()
-                    closeDrawer()
+                    logout()
                 },
                 modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
             )
         }
     }
+}
+
+@Composable
+private fun DrawerItem(entry: DrawerEntry, currentRoute: String, navigate: (String) -> Unit, closeDrawer: () -> Unit) {
+    NavigationDrawerItem(
+        label = { Text(entry.label) },
+        icon = { Icon(entry.icon, contentDescription = null) },
+        selected = currentRoute == entry.route,
+        onClick = {
+            navigate(entry.route)
+            closeDrawer()
+        },
+        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+    )
 }

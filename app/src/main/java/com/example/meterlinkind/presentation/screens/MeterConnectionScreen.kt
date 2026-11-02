@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -17,12 +19,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Factory
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.TableChart
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -43,6 +43,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.meterlinkind.data.repository.BleConnectionState
 import com.example.meterlinkind.presentation.components.AppDrawer
 import com.example.meterlinkind.presentation.viewmodel.MeterConnectionViewModel
+import com.example.meterlinkind.presentation.viewmodel.ObjectBrowserViewModel
+import com.example.meterlinkind.data.protocol.InterfaceClass
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,17 +54,35 @@ fun MeterConnectionScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var currentScreen by rememberSaveable { mutableStateOf("home") }
+    val connection by viewModel.uiState.collectAsState()
+    val loggedInClient = connection.client
+
+    if (loggedInClient == null) {
+        // Show the keys first, so they can be checked before connecting.
+        LoginScreen(onLogin = { user, pass -> viewModel.login(user, pass).also { if (it) currentScreen = "keys" } })
+        return
+    }
+
+    val browserViewModel: ObjectBrowserViewModel = hiltViewModel()
+    // OBIS of the object open in a browser screen; null shows that class's list.
+    var openObis by rememberSaveable { mutableStateOf<String?>(null) }
+    val openObject = openObis?.let(browserViewModel::find)
+    val navigate = { route: String -> currentScreen = route; openObis = null }
+
+    BackHandler(enabled = openObject != null) { openObis = null }
+
+    // The object list belongs to a meter (serial) and client; load the stored one when either changes.
+    LaunchedEffect(connection.serialNumber, loggedInClient) {
+        browserViewModel.onMeter(connection.serialNumber, loggedInClient)
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             AppDrawer(
                 currentRoute = currentScreen,
-                navigateToHome = { currentScreen = "home" },
-                navigateToOperations = { currentScreen = "operations" },
-                navigateToMaintenance = { currentScreen = "maintenance" },
-                navigateToFactory = { currentScreen = "factory" },
-                navigateToSettings = { currentScreen = "settings" },
+                navigate = navigate,
+                logout = viewModel::logout,
                 closeDrawer = { scope.launch { drawerState.close() } },
                 connectionViewModel = viewModel
             )
@@ -71,43 +91,49 @@ fun MeterConnectionScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(getScreenTitle(currentScreen)) },
+                    title = { Text(openObject?.name ?: getScreenTitle(currentScreen), maxLines = 1) },
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, "Menu")
+                        if (openObject != null) {
+                            IconButton(onClick = { openObis = null }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            }
+                        } else {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(Icons.Default.Menu, "Menu")
+                            }
                         }
                     }
                 )
             }
         ) { padding ->
-            when (currentScreen) {
-                "home" -> HomeContent(
-                    viewModel = viewModel,
-                    onNavigateToOperations = { currentScreen = "operations" },
-                    onNavigateToMaintenance = { currentScreen = "maintenance" },
-                    onNavigateToFactory = { currentScreen = "factory" },
-                    modifier = Modifier.padding(padding)
-                )
-                "operations" -> MeterOperationsScreen(
-                    viewModel = viewModel,
-                    onNavigateHome = { currentScreen = "home" },
-                    modifier = Modifier.padding(padding)
-                )
-                "maintenance" -> MaintenanceScreen(
+            val browsedClass = BROWSER_CLASSES[currentScreen]
+            when {
+                browsedClass != null && openObject != null -> ObjectDetailScreen(
+                    obj = openObject,
                     connectionViewModel = viewModel,
-                    maintenanceViewModel = hiltViewModel(),
-                    onNavigateHome = { currentScreen = "home" },
+                    browserViewModel = browserViewModel,
                     modifier = Modifier.padding(padding)
                 )
-                "factory" -> FactorySettingScreen(
+                browsedClass != null -> ObjectListScreen(
+                    classId = browsedClass,
                     connectionViewModel = viewModel,
-                    factoryViewModel = hiltViewModel(),
-                    onNavigateHome = { currentScreen = "home" },
+                    browserViewModel = browserViewModel,
+                    onOpen = { openObis = it.obis.toString() },
                     modifier = Modifier.padding(padding)
                 )
-                "settings" -> SettingsScreen(
+                currentScreen == "keys" -> SecurityKeysScreen(
                     viewModel = viewModel,
-                    onBack = { currentScreen = "home" },
+                    onDone = { navigate("home") },
+                    modifier = Modifier.padding(padding)
+                )
+                currentScreen == "settings" -> SettingsScreen(
+                    viewModel = viewModel,
+                    onBack = { navigate("home") },
+                    modifier = Modifier.padding(padding)
+                )
+                else -> HomeContent(
+                    viewModel = viewModel,
+                    onNavigate = navigate,
                     modifier = Modifier.padding(padding)
                 )
             }
@@ -115,12 +141,18 @@ fun MeterConnectionScreen(
     }
 }
 
+/** Drawer routes that browse one interface class. */
+private val BROWSER_CLASSES = mapOf(
+    "profile" to InterfaceClass.PROFILE_GENERIC,
+    "clock" to InterfaceClass.CLOCK,
+)
+
 private fun getScreenTitle(screen: String): String = when (screen) {
     "home" -> "Meter Link"
-    "operations" -> "Operations"
-    "maintenance" -> "Maintenance"
+    "profile" -> "Profile Generic"
+    "clock" -> "Clock"
     "settings" -> "Settings"
-    "factory" -> "Factory Setting"
+    "keys" -> "Security Keys"
     else -> "Meter Link"
 }
 
@@ -130,9 +162,7 @@ private fun getScreenTitle(screen: String): String = when (screen) {
 fun HomeContent(
     modifier: Modifier = Modifier,
     viewModel: MeterConnectionViewModel,
-    onNavigateToOperations: () -> Unit = {},
-    onNavigateToMaintenance: () -> Unit = {},
-    onNavigateToFactory: () -> Unit = {},
+    onNavigate: (String) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
@@ -365,7 +395,7 @@ fun HomeContent(
 
                         is BleConnectionState.Connected -> {
                             Text(
-                                text = "Quick Actions",
+                                text = "Browse the meter",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -375,36 +405,15 @@ fun HomeContent(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 QuickActionCard(
-                                    title = "Operations",
-                                    icon = Icons.Default.Settings,
-                                    onClick = onNavigateToOperations,
+                                    title = "Profiles",
+                                    icon = Icons.Default.TableChart,
+                                    onClick = { onNavigate("profile") },
                                     modifier = Modifier.weight(1f)
                                 )
                                 QuickActionCard(
-                                    title = "Maintenance",
-                                    icon = Icons.Default.Build,
-                                    onClick = onNavigateToMaintenance,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                QuickActionCard(
-                                    title = "Factory",
-                                    icon = Icons.Default.Factory,
-                                    onClick = onNavigateToFactory,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                QuickActionCard(
-                                    title = "Measure",
-                                    icon = Icons.Default.Speed,
-                                    onClick = {
-                                        viewModel.readMeasure()
-                                        onNavigateToOperations()
-                                    },
+                                    title = "Clock",
+                                    icon = Icons.Default.Schedule,
+                                    onClick = { onNavigate("clock") },
                                     modifier = Modifier.weight(1f)
                                 )
                             }

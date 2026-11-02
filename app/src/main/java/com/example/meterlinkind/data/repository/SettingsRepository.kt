@@ -2,6 +2,8 @@ package com.example.meterlinkind.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.meterlinkind.data.model.ClientSecurity
+import com.example.meterlinkind.data.protocol.ClientProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,6 +34,40 @@ class SettingsRepository @Inject constructor(
             putString("interval", interval)
             apply()
         }
+    }
+
+    fun getClientSecurity(client: ClientProfile): ClientSecurity {
+        val p = client.name.lowercase()
+        return ClientSecurity(
+            authPassword = prefs.getString("${p}_auth_password", null) ?: ClientSecurity.DEFAULT,
+            blockCipherKey = prefs.getString("${p}_block_cipher_key", null) ?: ClientSecurity.DEFAULT,
+            authenticationKey = prefs.getString("${p}_authentication_key", null) ?: ClientSecurity.DEFAULT,
+            broadcastKey = prefs.getString("${p}_broadcast_key", null) ?: ClientSecurity.DEFAULT,
+        )
+    }
+
+    fun saveClientSecurity(client: ClientProfile, security: ClientSecurity) {
+        val p = client.name.lowercase()
+        prefs.edit().apply {
+            putString("${p}_auth_password", security.authPassword)
+            putString("${p}_block_cipher_key", security.blockCipherKey)
+            putString("${p}_authentication_key", security.authenticationKey)
+            putString("${p}_broadcast_key", security.broadcastKey)
+            apply()
+        }
+    }
+
+    /**
+     * Our invocation counter, the second half of every GCM IV. One counter for
+     * all clients: they share the system title and may share a key, so separate
+     * counters would reuse an IV under the same key. Never repeats, also across
+     * app restarts.
+     */
+    @Synchronized
+    fun nextFrameCounter(): Long {
+        val next = (prefs.getLong("frame_counter", 0L) + 1) and 0xFFFFFFFFL
+        prefs.edit().putLong("frame_counter", next).apply()
+        return next
     }
 
     fun getSettings(): Map<String, String> {

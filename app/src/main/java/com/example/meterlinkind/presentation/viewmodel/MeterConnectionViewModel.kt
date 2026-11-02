@@ -3,12 +3,14 @@ package com.example.meterlinkind.presentation.viewmodel
 import android.bluetooth.BluetoothDevice
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.meterlinkind.data.export.OperationType
+import com.example.meterlinkind.data.model.AppAccounts
+import com.example.meterlinkind.data.model.ClientSecurity
+import com.example.meterlinkind.data.protocol.ClientProfile
 import com.example.meterlinkind.data.repository.BleConnectionState
 import com.example.meterlinkind.data.repository.BleRepository
 import com.example.meterlinkind.data.repository.ConnectionProgress
 import com.example.meterlinkind.data.repository.DlmsRepository
-import com.example.meterlinkind.dlms.DLMS
+import com.example.meterlinkind.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,38 +22,27 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class MeterConnectionUiState(
+    /** DLMS client of the logged-in app user; null until someone logs in. */
+    val client: ClientProfile? = null,
     val connectionState: BleConnectionState = BleConnectionState.Disconnected,
     val selectedDevice: BluetoothDevice? = null,
     /** Advertised name from the scan; `selectedDevice.name` goes null once the link closes. */
     val selectedDeviceName: String? = null,
     val isDlmsConnected: Boolean = false,
     val statusMessage: String = "",
-    val lastResponse: String = "",
-    val lastOperation: OperationType? = null,
-    val dialogState: DialogState = DialogState(),
-    val isOperationInProgress: Boolean = false,
     val serialNumber: String? = null
-)
-
-data class DialogState(
-    val show: Boolean = false,
-    val title: String = "",
-    val message: String = "",
-    val confirmText: String = "Confirm",
-    val isDestructive: Boolean = false,
-    val onConfirm: () -> Unit = {}
 )
 
 @HiltViewModel
 class MeterConnectionViewModel @Inject constructor(
     private val bleRepository: BleRepository,
-    private val dlmsRepository: DlmsRepository
+    private val dlmsRepository: DlmsRepository,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MeterConnectionUiState())
     val uiState: StateFlow<MeterConnectionUiState> = _uiState.asStateFlow()
 
-    private var currentReadJob: Job? = null
     private var connectionObserverJob: Job? = null
 
     init {
@@ -73,6 +64,29 @@ class MeterConnectionViewModel @Inject constructor(
         }
     }
 
+    /** Opens the app as the DLMS client this login maps to; false if the login is wrong. */
+    fun login(username: String, password: String): Boolean {
+        val client = AppAccounts.clientFor(username, password) ?: return false
+        _uiState.value = MeterConnectionUiState(client = client)
+        return true
+    }
+
+    fun logout() {
+        viewModelScope.launch {
+            dlmsRepository.release()
+            bleRepository.disconnect()
+            _uiState.value = MeterConnectionUiState()
+        }
+    }
+
+    fun getClientSecurity(): ClientSecurity =
+        _uiState.value.client?.let(settingsRepository::getClientSecurity) ?: ClientSecurity()
+
+    /** Takes effect from the next association. */
+    fun saveClientSecurity(security: ClientSecurity) {
+        _uiState.value.client?.let { settingsRepository.saveClientSecurity(it, security) }
+    }
+
     /** [name] comes from the scanner; a reconnect to the same device keeps the one we have. */
     fun connectToDevice(device: BluetoothDevice, name: String? = null) {
         viewModelScope.launch {
@@ -92,15 +106,16 @@ class MeterConnectionViewModel @Inject constructor(
     }
 
     private fun establishDlmsConnection() {
+        val client = _uiState.value.client ?: return
         viewModelScope.launch {
-            dlmsRepository.establishConnection().collect { progress ->
+            dlmsRepository.establishConnection(client, settingsRepository.getClientSecurity(client)).collect { progress ->
                 when (progress) {
                     is ConnectionProgress.Connecting -> {
                         _uiState.value = _uiState.value.copy(statusMessage = progress.message)
                     }
                     is ConnectionProgress.Connected -> {
                         _uiState.value = _uiState.value.copy(
-                            statusMessage = "Associated as Public (PC)",
+                            statusMessage = "Associated as ${client.label}",
                             isDlmsConnected = true
                         )
                         fetchSerialNumber()
@@ -124,121 +139,6 @@ class MeterConnectionViewModel @Inject constructor(
         }
     }
 
-    fun requestDemandReset() {
-        _uiState.update {
-            it.copy(
-                dialogState = DialogState(
-                    show = true,
-                    title = "Demand Reset",
-                    message = "Demand reset command will be issued.\n\n" +
-                            "This will reset the maximum demand values stored in the meter.\n\n" +
-                            "Are you sure you want to continue?",
-                    confirmText = "Yes, Reset",
-                    isDestructive = true,
-                    onConfirm = {
-                        executeDemandReset()
-                        dismissDialog()
-                    }
-                )
-            )
-        }
-    }
-
-    fun dismissDialog() {
-        _uiState.update { it.copy(dialogState = DialogState()) }
-    }
-
-    fun executeDemandReset() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(
-                isOperationInProgress = true,
-                lastResponse = "Executing demand reset..."
-            )}
-
-            dlmsRepository.executeDemandReset().collect { result ->
-                when (result) {
-                    is DlmsRepository.MeterDataResult.Loading -> {
-                        _uiState.update { it.copy(lastResponse = "Sending demand reset command...") }
-                    }
-                    is DlmsRepository.MeterDataResult.Success -> {
-                        _uiState.update { it.copy(
-                            lastResponse = "✓ Demand reset successful\n${getCurrentTimestamp()}",
-                            isOperationInProgress = false
-                        )}
-                    }
-                    is DlmsRepository.MeterDataResult.Error -> {
-                        _uiState.update { it.copy(
-                            lastResponse = "✗ Demand reset failed: ${result.message}\n${getCurrentTimestamp()}",
-                            isOperationInProgress = false
-                        )}
-                    }
-                    else -> {}
-                }
-            }
-        }
-    }
-
-    private fun getCurrentTimestamp(): String {
-        return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-            .format(java.util.Date())
-    }
-
-    private fun readMeterData(
-        objectIndex: Int,
-        operation: OperationType,
-        loadingMessage: String,
-    ) {
-        currentReadJob?.cancel()
-        currentReadJob = viewModelScope.launch {
-            // Clear stale operation tag so "Save Log" disables while a new read is mid-flight.
-            _uiState.update { it.copy(isOperationInProgress = true, lastOperation = null) }
-
-            dlmsRepository.readMeterData(objectIndex, 2).collect { result ->
-                when (result) {
-                    is DlmsRepository.MeterDataResult.Loading -> {
-                        _uiState.update { it.copy(lastResponse = loadingMessage) }
-                    }
-                    is DlmsRepository.MeterDataResult.Partial -> {
-                        _uiState.update { it.copy(lastResponse = result.data.joinToString("\n")) }
-                    }
-                    is DlmsRepository.MeterDataResult.Success -> {
-                        _uiState.update {
-                            it.copy(
-                                lastResponse = result.data.joinToString("\n"),
-                                lastOperation = operation,
-                                isOperationInProgress = false
-                            )
-                        }
-                    }
-                    is DlmsRepository.MeterDataResult.Error -> {
-                        _uiState.update {
-                            it.copy(
-                                lastResponse = "Error: ${result.message}",
-                                isOperationInProgress = false
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fun readMeasure() = readMeterData(85, OperationType.MEASURE, "Loading...")
-
-    fun readState() = readMeterData(DLMS.IST_SPECIFICATION, OperationType.STATE, "Loading state...")
-
-    fun readBilling() =
-        readMeterData(DLMS.IST_BILLING_PARAMS, OperationType.BILLING, "Loading billing data...")
-
-    fun readEvent() =
-        readMeterData(DLMS.IST_POWER_QUALITY, OperationType.EVENT, "Loading power quality events...")
-
-    fun readLoad() =
-        readMeterData(DLMS.IST_LOAD_PROFILE, OperationType.LOAD, "Loading load profile...")
-
-    fun readAmpere() =
-        readMeterData(DLMS.IST_AMPR_RECORD, OperationType.AMPERE, "Loading current profile...")
-
     fun updateSettings(account: String, password: String, address: String, rank: String, scan: String, tick: String, interval: String) {
         dlmsRepository.updateSettings(account, password, address, rank, scan, tick, interval)
     }
@@ -251,7 +151,7 @@ class MeterConnectionViewModel @Inject constructor(
         viewModelScope.launch {
             dlmsRepository.release()
             bleRepository.disconnect()
-            _uiState.value = MeterConnectionUiState()
+            _uiState.value = MeterConnectionUiState(client = _uiState.value.client)
         }
     }
 }

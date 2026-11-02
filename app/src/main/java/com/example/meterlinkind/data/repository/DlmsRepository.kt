@@ -2,6 +2,9 @@ package com.example.meterlinkind.data.repository
 
 import android.annotation.SuppressLint
 import android.util.Log
+import com.example.meterlinkind.data.model.ClientSecurity
+import com.example.meterlinkind.data.protocol.Action
+import com.example.meterlinkind.data.protocol.ActionResult
 import com.example.meterlinkind.data.protocol.Association
 import com.example.meterlinkind.data.protocol.AssociationResult
 import com.example.meterlinkind.data.protocol.Axdr
@@ -9,10 +12,21 @@ import com.example.meterlinkind.data.protocol.ByteLink
 import com.example.meterlinkind.data.protocol.ClientProfile
 import com.example.meterlinkind.data.protocol.Conformance
 import com.example.meterlinkind.data.protocol.CosemAttribute
+import com.example.meterlinkind.data.protocol.CosemSet
+import com.example.meterlinkind.data.protocol.CosemStructures
 import com.example.meterlinkind.data.protocol.DataAccessResult
+import com.example.meterlinkind.data.protocol.DlmsData
+import com.example.meterlinkind.data.protocol.GbtAssembler
+import com.example.meterlinkind.data.protocol.GbtBlock
 import com.example.meterlinkind.data.protocol.Get
 import com.example.meterlinkind.data.protocol.GetResult
+import com.example.meterlinkind.data.protocol.InterfaceClass
+import com.example.meterlinkind.data.protocol.Mechanism
+import com.example.meterlinkind.data.protocol.ObisCode
+import com.example.meterlinkind.data.protocol.ObjectListEntry
 import com.example.meterlinkind.data.protocol.PublicObjects
+import com.example.meterlinkind.data.protocol.SecureChannel
+import com.example.meterlinkind.data.protocol.ServiceError
 import com.example.meterlinkind.data.protocol.TransportException
 import com.example.meterlinkind.data.protocol.WrapperTransport
 import com.example.meterlinkind.data.protocol.toHex
@@ -49,8 +63,16 @@ class DlmsRepository @Inject constructor(
         dlms.updateAllMeterInformation()
     }
 
-    /** Client the current association was opened as; only Public (PC) for now. */
-    private val client = ClientProfile.PUBLIC
+    /**
+     * Our calling-AP-title, the IV prefix of every APDU we cipher. Only the
+     * Super client's is checked (`acse.c:request_application_title`); this is
+     * the title `dlms.c USERS[]` lists for MR and US.
+     */
+    private val CLIENT_SYSTEM_TITLE = "CLIENT00".toByteArray(Charsets.US_ASCII)
+
+    private val CURRENT_ASSOCIATION_OBJECT_LIST = CosemAttribute(
+        InterfaceClass.ASSOCIATION_LN, ObisCode.parse("0.0.40.0.0.255"), 2, "Current association.object_list"
+    )
 
     private val bleLink = object : ByteLink {
         override suspend fun send(data: ByteArray) = bleRepository.writeCharacteristic(data)
@@ -58,55 +80,173 @@ class DlmsRepository @Inject constructor(
         override fun clear() = bleRepository.clearReceived()
     }
 
-    private val transport = WrapperTransport(bleLink, client.clientPort)
+    /** Client the current (or last) association was opened as. */
+    var client: ClientProfile = ClientProfile.PUBLIC
+        private set
+
+    private var transport = WrapperTransport(bleLink, client.clientPort)
+
+    /** Ciphers xDLMS APDUs of an MR or US association; null for Public. */
+    private var channel: SecureChannel? = null
+
+    /** Keys of the current association, to log in again after the meter's inactivity timeout. */
+    private var security: ClientSecurity? = null
 
     /** Result of the last successful AARQ/AARE, or null when not associated. */
     var association: AssociationResult? = null
         private set
 
     /**
-     * Opens a DLMS association (AARQ/AARE); the wrapper has no link-layer step.
-     * As the Public client this is a plain LN context with no authentication
-     * or ciphering.
+     * Opens a DLMS association as [client]; the wrapper has no link-layer step.
+     * Public: plain LN context. MR: LLS password, encrypted APDUs. US: HLS
+     * challenge exchange after the AARE, encrypted and authenticated APDUs.
      */
-    fun establishConnection(): Flow<ConnectionProgress> = flow {
+    fun establishConnection(client: ClientProfile, security: ClientSecurity): Flow<ConnectionProgress> = flow {
         operationMutex.withLock {
             association = null
+            channel = null
+            this@DlmsRepository.client = client
+            this@DlmsRepository.security = security
+            transport = WrapperTransport(bleLink, client.clientPort)
             emit(ConnectionProgress.Connecting("Associating as ${client.label}..."))
-            val aare = try {
-                transport.request(Association.publicRequest())
+
+            val failure = try {
+                associate(client, security) { emit(ConnectionProgress.Connecting(it)) }
             } catch (e: TransportException) {
-                emit(ConnectionProgress.Failed(e.message ?: "No association response"))
-                return@withLock
-            }
-
-            val result = try {
-                Association.parseResponse(aare)
+                e.message ?: "No association response"
             } catch (e: Exception) {
-                Log.e(TAG, "Bad AARE ${aare.toHex()}", e)
-                emit(ConnectionProgress.Failed("Bad association response: ${e.message}"))
+                Log.e(TAG, "Association as ${client.label} failed", e)
+                "Bad association response: ${e.message}"
+            }
+            if (failure != null) {
+                association = null
+                channel = null
+                emit(ConnectionProgress.Failed(failure))
                 return@withLock
             }
-            Log.d(TAG, "AARE: $result")
 
-            if (!result.accepted) {
-                emit(ConnectionProgress.Failed("Association rejected: ${result.reason}"))
-                return@withLock
-            }
-
+            val result = association!!
             Log.i(
                 TAG, "Associated as ${client.label}: conformance=" +
                     "${Conformance.describe(result.negotiatedConformance)}, " +
                     "server max PDU=${result.serverMaxReceivePdu}"
             )
-            association = result
             emit(ConnectionProgress.Connected)
+        }
+    }
+
+    /** Runs the AARQ/AARE (and HLS passes 3-4); sets [association] and returns null on success. */
+    private suspend fun associate(
+        client: ClientProfile,
+        security: ClientSecurity,
+        progress: suspend (String) -> Unit,
+    ): String? {
+        if (client.mechanism == Mechanism.NONE) {
+            val result = Association.parseResponse(transport.request(Association.publicRequest()))
+            Log.d(TAG, "AARE: $result")
+            if (!result.accepted) return "Association rejected: ${result.reason}"
+            association = result
+            return null
+        }
+
+        if (!security.isValid) return "Keys must be ${ClientSecurity.KEY_LENGTH} characters each"
+        val secure = SecureChannel(
+            CLIENT_SYSTEM_TITLE, security.cipherKeys, client.securityControl, settingsRepository::nextFrameCounter
+        )
+        val clientChallenge = if (client.mechanism == Mechanism.HLS) randomChallenge() else null
+        val aarq = Association.cipheredRequest(
+            CLIENT_SYSTEM_TITLE,
+            client.mechanism,
+            clientChallenge ?: security.passwordBytes,
+            secure.protect(Association.initiateRequest()),
+        )
+        val result = Association.parseResponse(transport.request(aarq), secure)
+        Log.d(TAG, "AARE: $result")
+        if (!result.accepted) return "Association rejected: ${result.reason}"
+        channel = secure
+
+        if (clientChallenge != null) {
+            val serverChallenge = result.serverChallenge ?: return "Meter sent no HLS challenge"
+            progress("Authenticating (HLS)...")
+            val reply = Action.parseResponse(
+                exchange(Association.hlsReplyRequest(security.passwordBytes, serverChallenge))
+            )
+            if (!Association.hlsVerify(security.passwordBytes, clientChallenge, reply)) {
+                return when (reply) {
+                    is ActionResult.Failure -> "HLS rejected (${reply.reason}): check the authentication password"
+                    is ActionResult.ServiceFailure -> "HLS rejected: ${reply.message}"
+                    is ActionResult.Success -> "Meter's HLS reply doesn't match: check the authentication password"
+                }
+            }
+        }
+        association = result
+        return null
+    }
+
+    /** 16 printable characters, like the meter's own challenge (`aes_gcm.c:set_BtoA`). */
+    private fun randomChallenge(): ByteArray {
+        val random = java.security.SecureRandom()
+        return ByteArray(16) { (0x21 + random.nextInt(0x7E - 0x21 + 1)).toByte() }
+    }
+
+    /**
+     * Sends one xDLMS APDU, ciphered when the association is, and returns the
+     * plain reply. A reply split into General Block Transfer blocks is
+     * collected first (streamed blocks arrive unasked; otherwise we ack).
+     */
+    private suspend fun exchange(
+        apdu: ByteArray,
+        timeoutMs: Long = WrapperTransport.RESPONSE_TIMEOUT_MS,
+    ): ByteArray {
+        val secure = channel
+        var reply = transport.request(secure?.protect(apdu) ?: apdu, timeoutMs)
+        if ((reply.firstOrNull()?.toInt()?.and(0xFF)) == GbtBlock.TAG) reply = collectGbt(GbtBlock.parse(reply))
+        return secure?.unprotect(reply) ?: reply
+    }
+
+    /**
+     * [exchange] for the first request of an operation. The meter drops the
+     * association after its inactivity timeout and then answers everything
+     * with a confirmed-service-error (`0E 01 03 02`, `hrdtushin.c:local_call1`).
+     * On that answer, log in again with the same client and keys and retry once.
+     */
+    private suspend fun exchangeInSession(apdu: ByteArray): ByteArray {
+        val reply = exchange(apdu)
+        if ((reply.firstOrNull()?.toInt()?.and(0xFF)) != ServiceError.TAG_CONFIRMED_SERVICE_ERROR) return reply
+        val keys = security ?: return reply
+        Log.i(TAG, "Meter ended the session (${reply.toHex()}); associating again as ${client.label}")
+        channel = null
+        val failure = try {
+            associate(client, keys) {}
+        } catch (e: Exception) {
+            e.message ?: "no response"
+        }
+        if (failure != null) {
+            association = null
+            throw TransportException("The meter ended the session and logging in again failed ($failure). Reconnect.")
+        }
+        return exchange(apdu)
+    }
+
+    private suspend fun collectGbt(first: GbtBlock): ByteArray {
+        val blocks = GbtAssembler()
+        var block = first
+        var ourBlockNumber = 0
+        while (true) {
+            blocks.add(block)?.let { return it }
+            val next = if (block.streaming) {
+                transport.receive()
+            } else {
+                transport.request(GbtBlock.ack(++ourBlockNumber, block.blockNumber))
+            }
+            block = GbtBlock.parse(next)
         }
     }
 
     /** Call when the BLE link drops: the association can't be used any more. */
     fun clearAssociation() {
         association = null
+        channel = null
     }
 
     /**
@@ -117,6 +257,7 @@ class DlmsRepository @Inject constructor(
         operationMutex.withLock {
             if (association == null) return@withLock
             association = null
+            channel = null
             try {
                 val reply = transport.request(Association.releaseRequest(), RELEASE_TIMEOUT_MS)
                 Log.d(TAG, if (Association.parseReleaseResponse(reply)) "Association released" else "Meter refused release")
@@ -130,51 +271,78 @@ class DlmsRepository @Inject constructor(
 
     /**
      * GETs one attribute. Emits [MeterDataResult.Success] with a single
-     * display string. Follows Get-Response-With-Datablock if the meter splits
-     * the value, although the Public client isn't granted block transfer.
+     * display string; [read] is the same with the decoded value.
      */
     fun readAttribute(target: CosemAttribute): Flow<MeterDataResult> = flow {
-        operationMutex.withLock {
-            emit(MeterDataResult.Loading)
-            if (association == null) {
-                emit(MeterDataResult.Error("Not associated"))
-                return@withLock
-            }
-            Log.d(TAG, "GET ${target.name} (class ${target.classId}, ${target.obis}, attr ${target.attribute})")
-
-            try {
-                var response = Get.parseResponse(transport.request(Get.request(target)))
-                val blocks = java.io.ByteArrayOutputStream()
-                while (response is GetResult.Block) {
-                    blocks.write(response.raw)
-                    if (response.last) {
-                        response = GetResult.Data(Axdr.decode(blocks.toByteArray()))
-                        break
-                    }
-                    emit(MeterDataResult.Partial(arrayListOf("Receiving block ${response.blockNumber}...")))
-                    response = Get.parseResponse(transport.request(Get.nextBlock(response.blockNumber)))
-                }
-
-                when (response) {
-                    is GetResult.Data -> {
-                        val text = response.data.display()
-                        Log.d(TAG, "${target.name} = $text")
-                        emit(MeterDataResult.Success(arrayListOf(text)))
-                    }
-                    is GetResult.AccessError -> emit(MeterDataResult.Error("Access error: ${response.reason}"))
-                    is GetResult.BlockError ->
-                        emit(MeterDataResult.Error("Block ${response.blockNumber} error: ${DataAccessResult.describe(response.code)}"))
-                    is GetResult.ServiceFailure -> emit(MeterDataResult.Error(response.message))
-                    is GetResult.Block -> Unit // unreachable: loop above consumes blocks
-                }
-            } catch (e: TransportException) {
-                emit(MeterDataResult.Error(e.message ?: "No response"))
-            } catch (e: Exception) {
-                Log.e(TAG, "GET ${target.name} failed", e)
-                emit(MeterDataResult.Error("Bad response: ${e.message}"))
-            }
+        emit(MeterDataResult.Loading)
+        when (val result = read(target) { emit(MeterDataResult.Partial(arrayListOf(it))) }) {
+            is AttributeRead.Value -> emit(MeterDataResult.Success(arrayListOf(result.data.display())))
+            is AttributeRead.Failure -> emit(MeterDataResult.Error(result.message))
         }
     }
+
+    /**
+     * GETs one attribute, with [access] as selective access (e.g.
+     * [SelectiveAccess.byEntry]) if given. Follows Get-Response-With-Datablock,
+     * reporting each block through [progress].
+     */
+    suspend fun read(
+        target: CosemAttribute,
+        access: ByteArray? = null,
+        progress: suspend (String) -> Unit = {},
+    ): AttributeRead = operationMutex.withLock {
+        if (association == null) return@withLock AttributeRead.Failure("Not connected to a meter")
+        Log.d(TAG, "GET ${target.name} (class ${target.classId}, ${target.obis}, attr ${target.attribute})")
+        try {
+            var response = Get.parseResponse(exchangeInSession(Get.request(target, access)))
+            val blocks = java.io.ByteArrayOutputStream()
+            while (response is GetResult.Block) {
+                blocks.write(response.raw)
+                if (response.last) {
+                    response = GetResult.Data(Axdr.decode(blocks.toByteArray()))
+                    break
+                }
+                progress("Receiving block ${response.blockNumber}...")
+                response = Get.parseResponse(exchange(Get.nextBlock(response.blockNumber)))
+            }
+            when (response) {
+                is GetResult.Data -> AttributeRead.Value(response.data).also {
+                    Log.d(TAG, "${target.name} = ${response.data.display().take(200)}")
+                }
+                is GetResult.AccessError -> AttributeRead.Failure(response.reason)
+                is GetResult.BlockError ->
+                    AttributeRead.Failure("Block ${response.blockNumber}: ${DataAccessResult.describe(response.code)}")
+                is GetResult.ServiceFailure -> AttributeRead.Failure(response.message)
+                is GetResult.Block -> AttributeRead.Failure("Unfinished block transfer") // loop above consumes blocks
+            }
+        } catch (e: TransportException) {
+            AttributeRead.Failure(e.message ?: "No response")
+        } catch (e: Exception) {
+            Log.e(TAG, "GET ${target.name} failed", e)
+            AttributeRead.Failure("Bad response: ${e.message}")
+        }
+    }
+
+    /** SETs one attribute to [value] (one encoded `Data`); null on success, else the reason. */
+    suspend fun write(target: CosemAttribute, value: ByteArray): String? = operationMutex.withLock {
+        if (association == null) return@withLock "Not connected to a meter"
+        Log.d(TAG, "SET ${target.name} (class ${target.classId}, ${target.obis}, attr ${target.attribute})")
+        try {
+            CosemSet.parseResponse(exchangeInSession(CosemSet.request(target, value)))
+        } catch (e: TransportException) {
+            e.message ?: "No response"
+        } catch (e: Exception) {
+            Log.e(TAG, "SET ${target.name} failed", e)
+            "Bad response: ${e.message}"
+        }
+    }
+
+    /** The objects the current association may see (current association, attribute 2). */
+    suspend fun readObjectList(progress: suspend (String) -> Unit = {}): Result<List<ObjectListEntry>> =
+        when (val result = read(CURRENT_ASSOCIATION_OBJECT_LIST, progress = progress)) {
+            is AttributeRead.Value -> runCatching { CosemStructures.objectList(result.data) }
+            is AttributeRead.Failure -> Result.failure(Exception(result.message))
+        }
 
     fun readMeterData(objectIndex: Int, attribute: Byte = 2): Flow<MeterDataResult> = flow {
         operationMutex.withLock {
@@ -535,4 +703,10 @@ sealed class ConnectionProgress {
     data class Connecting(val message: String) : ConnectionProgress()
     object Connected : ConnectionProgress()
     data class Failed(val message: String) : ConnectionProgress()
+}
+
+/** Outcome of one GET: the decoded value, or why there is none. */
+sealed class AttributeRead {
+    data class Value(val data: DlmsData) : AttributeRead()
+    data class Failure(val message: String) : AttributeRead()
 }
