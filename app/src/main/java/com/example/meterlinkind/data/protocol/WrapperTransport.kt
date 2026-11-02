@@ -19,11 +19,11 @@ class WrapperTransport(
     private val assembler = WrapperAssembler()
 
     /** Sends one APDU and returns the APDU of the meter's reply. */
-    suspend fun request(apdu: ByteArray): ByteArray {
+    suspend fun request(apdu: ByteArray, timeoutMs: Long = RESPONSE_TIMEOUT_MS): ByteArray {
         link.clear()
         assembler.reset()
         if (!link.send(WrapperCodec.encode(clientPort, apdu))) throw TransportException("Failed to send request")
-        var timeout = RESPONSE_TIMEOUT_MS
+        var timeout = timeoutMs
         while (true) {
             val chunk = link.receive(timeout) ?: throw TransportException(
                 if (assembler.pendingBytes == 0) "No response from meter"

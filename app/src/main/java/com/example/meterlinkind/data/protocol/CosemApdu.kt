@@ -126,6 +126,10 @@ object Association {
     const val TAG_AARQ = 0x60
     const val TAG_AARE = 0x61
     const val TAG_RLRQ = 0x62
+    const val TAG_RLRE = 0x63
+
+    /** Release reason normal (`RL_NORMAL`); the meter answers not-finished (1) when it refuses. */
+    private const val RELEASE_NORMAL = 0
 
     private val LN_NO_CIPHER = byteArrayOf(0x60, 0x85.toByte(), 0x74, 0x05, 0x08, 0x01, 0x01)
 
@@ -159,7 +163,21 @@ object Association {
         return Ber.tlv(TAG_AARQ, body)
     }
 
-    fun releaseRequest(): ByteArray = byteArrayOf(TAG_RLRQ.toByte(), 0x00)
+    /**
+     * RLRQ with reason normal. The meter refuses a bare `62 00`: it wants
+     * exactly the reason element `80 01 00` (`acse.c:request_release_reason`).
+     */
+    fun releaseRequest(): ByteArray = Ber.tlv(TAG_RLRQ, Ber.tlv(0x80, byteArrayOf(RELEASE_NORMAL.toByte())))
+
+    /** True if the RLRE has reason normal, i.e. the meter dropped the association. */
+    fun parseReleaseResponse(apdu: ByteArray): Boolean {
+        if (apdu.isEmpty() || (apdu[0].toInt() and 0xFF) != TAG_RLRE) {
+            throw ApduException("Expected RLRE (0x63), got ${describeApdu(apdu)}")
+        }
+        val reason = Ber.parse(Ber.parse(apdu).single().value).firstOrNull { it.tag == 0x80 }
+            ?: throw ApduException("RLRE has no reason")
+        return reason.intValue() == RELEASE_NORMAL
+    }
 
     fun parseResponse(apdu: ByteArray): AssociationResult {
         if (apdu.isEmpty()) throw ApduException("Empty association response")

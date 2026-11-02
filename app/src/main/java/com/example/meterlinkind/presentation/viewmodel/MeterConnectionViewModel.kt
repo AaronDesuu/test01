@@ -243,6 +243,7 @@ class MeterConnectionViewModel @Inject constructor(
 
     fun disconnect() {
         viewModelScope.launch {
+            dlmsRepository.release()
             bleRepository.disconnect()
             _uiState.value = MeterConnectionUiState()
         }

@@ -30,6 +30,9 @@ class DlmsRepository @Inject constructor(
 ) {
     private val TAG = "DlmsRepository"
 
+    /** The meter answers within ~0.2 s; a silent one shouldn't hold up a disconnect. */
+    private val RELEASE_TIMEOUT_MS = 1000L
+
     // Serializes every BLE write+wait sequence across the whole app. DLMS is
     // request/response and the data channel is shared, so two operations in
     // flight at once will scramble framing.
@@ -101,9 +104,26 @@ class DlmsRepository @Inject constructor(
         }
     }
 
-    /** Call when the BLE link drops: the meter forgets the association with it. */
+    /** Call when the BLE link drops: the association can't be used any more. */
     fun clearAssociation() {
         association = null
+    }
+
+    /**
+     * Sends RLRQ so the meter frees the association at once instead of on its
+     * inactivity timeout. Best effort: the caller drops the BLE link right after.
+     */
+    suspend fun release() {
+        operationMutex.withLock {
+            if (association == null) return@withLock
+            association = null
+            try {
+                val reply = transport.request(Association.releaseRequest(), RELEASE_TIMEOUT_MS)
+                Log.d(TAG, if (Association.parseReleaseResponse(reply)) "Association released" else "Meter refused release")
+            } catch (e: Exception) {
+                Log.w(TAG, "Release failed: ${e.message}")
+            }
+        }
     }
 
     fun readSerialNumber(): Flow<MeterDataResult> = readAttribute(PublicObjects.SERIAL_NUMBER)

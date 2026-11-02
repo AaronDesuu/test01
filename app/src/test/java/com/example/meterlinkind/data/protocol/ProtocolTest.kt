@@ -107,6 +107,22 @@ class ProtocolTest {
     }
 
     @Test
+    fun releaseRequestCarriesReasonNormal() {
+        // acse.c:request_release_reason wants exactly 80 01 00 after the length.
+        assertArrayEquals(hex("62 03 80 01 00"), Association.releaseRequest())
+    }
+
+    @Test
+    fun parsesRlre() {
+        assertTrue(Association.parseReleaseResponse(hex("63 03 80 01 00")))
+        assertFalse(Association.parseReleaseResponse(hex("63 03 80 01 01")))
+        assertEquals(
+            "Expected RLRE (0x63), got 0x61 (6100)",
+            runCatching { Association.parseReleaseResponse(hex("61 00")) }.exceptionOrNull()?.message
+        )
+    }
+
+    @Test
     fun conformanceBitsMatchMeterTable() {
         // xdlms.c CONFORMANCE[] Public row: 00 00 10 -> GET only.
         assertEquals(0x000010, Conformance.GET)
