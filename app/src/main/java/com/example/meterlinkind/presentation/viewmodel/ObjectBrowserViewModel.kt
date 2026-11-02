@@ -35,6 +35,30 @@ data class AttributeState(
     val progress: String? = null,
 )
 
+/** Which part of a Profile Generic buffer to read, as Gurux offers it. */
+sealed class BufferSelection {
+    /** Rows [first]..[first]+[count]-1 (entry_descriptor). */
+    data class Entries(val first: Long, val count: Long) : BufferSelection()
+    /** From midnight [days] days ago until now; 0 = today (range_descriptor). */
+    data class LastDays(val days: Long) : BufferSelection()
+    /** Rows whose time lies in [from]..[to] (range_descriptor). */
+    data class Range(val from: LocalDateTime, val to: LocalDateTime) : BufferSelection()
+    object All : BufferSelection()
+
+    fun dateRange(now: LocalDateTime = LocalDateTime.now().withNano(0)): Pair<LocalDateTime, LocalDateTime> = when (this) {
+        is LastDays -> now.toLocalDate().minusDays(days).atStartOfDay() to now
+        is Range -> from to to
+        else -> throw IllegalStateException("$this has no date range")
+    }
+
+    fun describe(): String = when (this) {
+        is Entries -> "entries $first-${first + count - 1}"
+        is LastDays -> if (days == 0L) "today's entries" else "the last $days days"
+        is Range -> "entries from $from to $to"
+        All -> "all entries"
+    }
+}
+
 /** A Profile Generic buffer read: columns from capture_objects, rows from buffer. */
 data class ProfileBufferState(
     val loading: Boolean = false,
@@ -170,11 +194,11 @@ class ObjectBrowserViewModel @Inject constructor(
     }
 
     /**
-     * Reads a Profile Generic buffer: the newest [lastEntries] rows, or all of
-     * them if null. capture_objects (the column headers) and entries_in_use are
-     * read first.
+     * Reads a Profile Generic buffer the way Gurux offers it ([BufferSelection]).
+     * capture_objects (the column headers and the clock column a date range
+     * filters on) and entries_in_use are read first.
      */
-    fun readBuffer(obj: CosemObject, lastEntries: Int?) {
+    fun readBuffer(obj: CosemObject, selection: BufferSelection) {
         if (_uiState.value.buffers[obj.obis]?.loading == true) return
         viewModelScope.launch {
             setBuffer(obj) { it.copy(loading = true, error = null, progress = "Reading columns...") }
@@ -182,12 +206,22 @@ class ObjectBrowserViewModel @Inject constructor(
                 ?: readNow(obj, CAPTURE_OBJECTS)?.let { runCatching { CosemStructures.captureObjects(it) }.getOrNull() }
             val entries = (readNow(obj, ENTRIES_IN_USE) as? DlmsData.Integer)?.value
 
-            val access = if (lastEntries != null && entries != null && entries > lastEntries) {
-                SelectiveAccess.byEntry(entries - lastEntries + 1, entries)
-            } else {
-                null
+            val access = when (selection) {
+                BufferSelection.All -> null
+                is BufferSelection.Entries ->
+                    SelectiveAccess.byEntry(selection.first, selection.first + selection.count - 1)
+                is BufferSelection.Range, is BufferSelection.LastDays -> {
+                    val (from, to) = selection.dateRange()
+                    // Filter on the clock column; Gurux uses the first capture object, which is the clock here too.
+                    val restricting = columns?.firstOrNull { it.classId == InterfaceClass.CLOCK } ?: columns?.firstOrNull()
+                    if (restricting == null) {
+                        setBuffer(obj) { it.copy(loading = false, progress = null, error = "No columns to filter by date") }
+                        return@launch
+                    }
+                    SelectiveAccess.byRange(restricting, from, to)
+                }
             }
-            setBuffer(obj) { it.copy(progress = "Reading ${if (access == null) "all" else "last $lastEntries"} entries...", entriesInUse = entries) }
+            setBuffer(obj) { it.copy(progress = "Reading ${selection.describe()}...", entriesInUse = entries) }
             when (val result = dlmsRepository.read(obj.attribute(BUFFER), access) { p -> setBuffer(obj) { it.copy(progress = p) } }) {
                 is AttributeRead.Value -> {
                     val rows = (result.data as? DlmsData.Array)?.items?.map { row ->

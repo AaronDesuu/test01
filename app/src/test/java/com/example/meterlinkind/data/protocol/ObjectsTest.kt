@@ -41,9 +41,39 @@ class ObjectsTest {
     }
 
     @Test
+    fun getWithRangeDescriptor() {
+        val clockColumn = CaptureObject(8, ObisCode.parse("0.0.1.0.0.255"), 2, 0)
+        val from = LocalDateTime.of(2026, 11, 2, 0, 0)
+        val to = LocalDateTime.of(2026, 11, 2, 15, 34)
+        assertArrayEquals(
+            hex(
+                "01 02 04" +
+                    "02 04 12 0008 09 06 0000010000FF 0F 02 12 0000" + // restricting object: clock column
+                    "09 0C 07EA 0B 02 01 00 00 00 FF 8000 00" +       // from 2026-11-02 00:00:00 (Monday)
+                    "09 0C 07EA 0B 02 01 0F 22 00 FF 8000 00" +       // to 15:34:00
+                    "01 00"                                          // all columns
+            ),
+            SelectiveAccess.byRange(clockColumn, from, to)
+        )
+    }
+
+    @Test
     fun float32DisplaysAtSinglePrecision() {
         // 239.73 as the meter's block voltage column sends it
         assertEquals("239.73", Axdr.decode(hex("17 436FBAE1")).display())
+    }
+
+    @Test
+    fun lastDaysStartsAtMidnight() {
+        val now = LocalDateTime.of(2026, 11, 2, 15, 34, 10)
+        assertEquals(
+            LocalDateTime.of(2026, 11, 2, 0, 0) to now,
+            com.example.meterlinkind.presentation.viewmodel.BufferSelection.LastDays(0).dateRange(now)
+        )
+        assertEquals(
+            LocalDateTime.of(2026, 10, 31, 0, 0) to now,
+            com.example.meterlinkind.presentation.viewmodel.BufferSelection.LastDays(2).dateRange(now)
+        )
     }
 
     @Test

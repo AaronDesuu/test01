@@ -90,6 +90,25 @@ object SelectiveAccess {
             u32(Axdr.TAG_UINT32, fromEntry) + u32(Axdr.TAG_UINT32, toEntry) +
             u16(Axdr.TAG_UINT16, fromColumn) + u16(Axdr.TAG_UINT16, toColumn)
 
+    /**
+     * Profile Generic range_descriptor (selector 1): rows whose [restricting]
+     * column (one of the capture objects, normally the clock) lies in
+     * [from]..[to], all columns (`xdlms.c:cl7_selacc1`). The meter rejects
+     * from > to.
+     */
+    fun byRange(restricting: CaptureObject, from: LocalDateTime, to: LocalDateTime): ByteArray =
+        byteArrayOf(0x01, Axdr.TAG_STRUCTURE.toByte(), 0x04) +
+            captureObjectDefinition(restricting) +
+            ClockValue.encode(from) + ClockValue.encode(to) +
+            byteArrayOf(Axdr.TAG_ARRAY.toByte(), 0x00) // selected_values: none = all columns
+
+    private fun captureObjectDefinition(c: CaptureObject): ByteArray =
+        byteArrayOf(Axdr.TAG_STRUCTURE.toByte(), 0x04) +
+            u16(Axdr.TAG_UINT16, c.classId) +
+            byteArrayOf(Axdr.TAG_OCTET_STRING.toByte(), 6) + c.obis.bytes +
+            byteArrayOf(Axdr.TAG_INT8.toByte(), c.attribute.toByte()) +
+            u16(Axdr.TAG_UINT16, c.dataIndex)
+
     private fun u32(tag: Int, v: Long) =
         byteArrayOf(tag.toByte(), (v shr 24).toByte(), (v shr 16).toByte(), (v shr 8).toByte(), v.toByte())
 

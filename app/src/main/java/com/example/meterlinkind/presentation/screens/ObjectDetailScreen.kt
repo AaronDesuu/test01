@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,6 +49,7 @@ import com.example.meterlinkind.data.protocol.InterfaceClass
 import com.example.meterlinkind.data.protocol.ObisCode
 import com.example.meterlinkind.presentation.components.ConnectionStrip
 import com.example.meterlinkind.presentation.viewmodel.AttributeState
+import com.example.meterlinkind.presentation.viewmodel.BufferSelection
 import com.example.meterlinkind.presentation.viewmodel.MeterConnectionViewModel
 import com.example.meterlinkind.presentation.viewmodel.ObjectBrowserViewModel
 import com.example.meterlinkind.presentation.viewmodel.ProfileBufferState
@@ -142,7 +142,7 @@ fun ObjectDetailScreen(
                 BufferSection(
                     state = browser.buffers[obj.obis] ?: ProfileBufferState(),
                     enabled = online,
-                    onRead = { last -> browserViewModel.readBuffer(obj, last) },
+                    onRead = { selection -> browserViewModel.readBuffer(obj, selection) },
                 )
             }
         }
@@ -226,32 +226,13 @@ private fun AccessTag(label: String) {
 }
 
 @Composable
-private fun BufferSection(state: ProfileBufferState, enabled: Boolean, onRead: (Int?) -> Unit) {
-    var last by rememberSaveable { mutableStateOf<Int?>(10) }
+private fun BufferSection(state: ProfileBufferState, enabled: Boolean, onRead: (BufferSelection) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
         Text("Buffer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(
-            state.entriesInUse?.let { "$it entries stored in the meter" } ?: "Reads the newest entries with selective access.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(10, 50, 100, null).forEach { option ->
-                FilterChip(
-                    selected = last == option,
-                    onClick = { last = option },
-                    label = { Text(option?.let { "Last $it" } ?: "All") }
-                )
-            }
+        state.entriesInUse?.let {
+            Text("$it entries stored in the meter", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Button(onClick = { onRead(last) }, enabled = enabled && !state.loading, modifier = Modifier.fillMaxWidth()) {
-            if (state.loading) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                Text("  ${state.progress ?: "Reading..."}")
-            } else {
-                Text("Read buffer")
-            }
-        }
+        BufferReadingOptions(enabled = enabled, loading = state.loading, progress = state.progress, onRead = onRead)
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         state.rows?.let { rows -> BufferTable(state, rows) }
     }
