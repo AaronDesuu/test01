@@ -36,7 +36,7 @@ fun FactorySettingScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         DeviceStatusCard(
-            deviceName = connectionState.selectedDevice?.name,
+            deviceName = connectionState.selectedDeviceName,
             serialNumber = connectionState.serialNumber,
             macAddress = connectionState.selectedDevice?.address,
             connectionState = connectionState.connectionState,

@@ -62,7 +62,7 @@ fun AppDrawer(
             // Device Status Card
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 CompactDeviceStatusCard(
-                    deviceName = connectionState.selectedDevice?.name,
+                    deviceName = connectionState.selectedDeviceName,
                     serialNumber = connectionState.serialNumber,
                     macAddress = connectionState.selectedDevice?.address,
                     connectionState = connectionState.connectionState,

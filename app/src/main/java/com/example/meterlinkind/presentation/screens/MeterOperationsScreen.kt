@@ -79,7 +79,7 @@ fun MeterOperationsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         DeviceStatusCard(
-            deviceName = uiState.selectedDevice?.name,
+            deviceName = uiState.selectedDeviceName,
             serialNumber = uiState.serialNumber,
             macAddress = uiState.selectedDevice?.address,
             connectionState = uiState.connectionState,
@@ -214,7 +214,7 @@ fun MeterOperationsScreen(
                                 val op = uiState.lastOperation ?: return@TextButton
                                 pendingSave = PendingSave(
                                     operation = op,
-                                    deviceName = uiState.selectedDevice?.name,
+                                    deviceName = uiState.selectedDeviceName,
                                     serialNumber = uiState.serialNumber,
                                     lines = uiState.lastResponse.split('\n'),
                                 )

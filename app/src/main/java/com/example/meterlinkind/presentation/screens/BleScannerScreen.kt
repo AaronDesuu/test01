@@ -58,13 +58,16 @@ import com.example.meterlinkind.data.repository.BleRepository
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BleScannerScreen(
-    onDeviceSelected: (BluetoothDevice) -> Unit,
+    onDeviceSelected: (BluetoothDevice, String?) -> Unit,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
     var isScanning by remember { mutableStateOf(false) }
     var eMeterDevices by remember { mutableStateOf<List<BluetoothDevice>>(emptyList()) }
     var unknownDevices by remember { mutableStateOf<List<BluetoothDevice>>(emptyList()) }
+    // Names by address, from the advertisements. BluetoothDevice.name is Android's
+    // cache, which drops unbonded devices once a GATT connection to them closes.
+    var deviceNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var hasPermissions by remember { mutableStateOf(checkPermissions(context)) }
 
@@ -91,7 +94,10 @@ fun BleScannerScreen(
         object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device
-                val deviceName = device.name ?: result.scanRecord?.deviceName
+                val deviceName = result.scanRecord?.deviceName ?: device.name
+                if (deviceName != null && deviceNames[device.address] != deviceName) {
+                    deviceNames = deviceNames + (device.address to deviceName)
+                }
                 val advertisesMeterService = result.scanRecord?.serviceUuids
                     ?.any { it.uuid == BleRepository.ADVERTISED_SERVICE_UUID } == true
 
@@ -235,8 +241,8 @@ fun BleScannerScreen(
                     }
 
                     when (selectedTabIndex) {
-                        0 -> DeviceList(devices = eMeterDevices, onDeviceSelected = onDeviceSelected)
-                        1 -> DeviceList(devices = unknownDevices, onDeviceSelected = onDeviceSelected)
+                        0 -> DeviceList(devices = eMeterDevices, names = deviceNames, onDeviceSelected = onDeviceSelected)
+                        1 -> DeviceList(devices = unknownDevices, names = deviceNames, onDeviceSelected = onDeviceSelected)
                     }
                 }
             }
@@ -272,7 +278,8 @@ private fun BlockingMessage(
 @Composable
 private fun DeviceList(
     devices: List<BluetoothDevice>,
-    onDeviceSelected: (BluetoothDevice) -> Unit
+    names: Map<String, String>,
+    onDeviceSelected: (BluetoothDevice, String?) -> Unit
 ) {
     if (devices.isEmpty()) {
         Text(
@@ -287,11 +294,11 @@ private fun DeviceList(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .clickable { onDeviceSelected(device) }
+                        .clickable { onDeviceSelected(device, names[device.address]) }
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = device.name ?: "Unknown Device",
+                            text = names[device.address] ?: "Unknown Device",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(

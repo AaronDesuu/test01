@@ -141,8 +141,8 @@ fun HomeContent(
 
     if (showScanner) {
         BleScannerScreen(
-            onDeviceSelected = { device ->
-                viewModel.connectToDevice(device)
+            onDeviceSelected = { device, name ->
+                viewModel.connectToDevice(device, name)
                 showScanner = false
             },
             onClose = { showScanner = false }
@@ -242,7 +242,7 @@ fun HomeContent(
                             uiState.selectedDevice?.let { device ->
                                 Spacer(modifier = Modifier.height(8.dp))
                                 CopyableText(
-                                    text = device.name ?: "Unknown Device",
+                                    text = uiState.selectedDeviceName ?: "Unknown Device",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     onCopied = { text ->
@@ -341,7 +341,7 @@ fun HomeContent(
                                     ) {
                                         Icon(Icons.AutoMirrored.Filled.BluetoothSearching, contentDescription = null)
                                         Spacer(Modifier.width(8.dp))
-                                        Text("Reconnect to ${device.name ?: "Device"}")
+                                        Text("Reconnect to ${uiState.selectedDeviceName ?: "Device"}")
                                     }
                                 }
 

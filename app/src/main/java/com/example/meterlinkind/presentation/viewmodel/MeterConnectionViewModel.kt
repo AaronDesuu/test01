@@ -22,6 +22,8 @@ import javax.inject.Inject
 data class MeterConnectionUiState(
     val connectionState: BleConnectionState = BleConnectionState.Disconnected,
     val selectedDevice: BluetoothDevice? = null,
+    /** Advertised name from the scan; `selectedDevice.name` goes null once the link closes. */
+    val selectedDeviceName: String? = null,
     val isDlmsConnected: Boolean = false,
     val statusMessage: String = "",
     val lastResponse: String = "",
@@ -71,9 +73,13 @@ class MeterConnectionViewModel @Inject constructor(
         }
     }
 
-    fun connectToDevice(device: BluetoothDevice) {
+    /** [name] comes from the scanner; a reconnect to the same device keeps the one we have. */
+    fun connectToDevice(device: BluetoothDevice, name: String? = null) {
         viewModelScope.launch {
-            _uiState.update { it.copy(selectedDevice = device) }
+            _uiState.update {
+                val known = it.selectedDeviceName.takeIf { _ -> it.selectedDevice?.address == device.address }
+                it.copy(selectedDevice = device, selectedDeviceName = name ?: known)
+            }
             bleRepository.connectToDevice(device)
 
             val terminal = bleRepository.connectionState.first {
