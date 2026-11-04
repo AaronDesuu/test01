@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.meterlinkind.data.model.AppAccounts
 import com.example.meterlinkind.data.model.ClientSecurity
+import com.example.meterlinkind.data.model.UserSession
 import com.example.meterlinkind.data.protocol.ClientProfile
 import com.example.meterlinkind.data.repository.BleConnectionState
 import com.example.meterlinkind.data.repository.BleRepository
@@ -47,6 +48,40 @@ class MeterConnectionViewModel @Inject constructor(
 
     init {
         observeConnectionState()
+        restoreSession()
+    }
+
+    /** Logs the saved user back in, unless the app went unused for [UserSession.TIMEOUT_MILLIS]. */
+    private fun restoreSession() {
+        val session = settingsRepository.getSession() ?: return
+        val now = System.currentTimeMillis()
+        if (session.isExpired(now)) {
+            settingsRepository.clearSession()
+        } else {
+            settingsRepository.saveSession(session.copy(lastActiveMillis = now))
+            _uiState.value = MeterConnectionUiState(client = session.client)
+        }
+    }
+
+    /**
+     * Call when the app comes to the foreground: logs out if it sat unused
+     * for too long, otherwise counts as activity.
+     */
+    fun onAppResumed() {
+        val client = _uiState.value.client ?: return
+        val session = settingsRepository.getSession()
+        val now = System.currentTimeMillis()
+        if (session == null || session.isExpired(now)) {
+            logout()
+        } else {
+            settingsRepository.saveSession(UserSession(client, now))
+        }
+    }
+
+    /** Call when the app goes to the background: the inactivity period starts now. */
+    fun onAppPaused() {
+        val client = _uiState.value.client ?: return
+        settingsRepository.saveSession(UserSession(client, System.currentTimeMillis()))
     }
 
     private fun observeConnectionState() {
@@ -67,11 +102,13 @@ class MeterConnectionViewModel @Inject constructor(
     /** Opens the app as the DLMS client this login maps to; false if the login is wrong. */
     fun login(username: String, password: String): Boolean {
         val client = AppAccounts.clientFor(username, password) ?: return false
+        settingsRepository.saveSession(UserSession(client, System.currentTimeMillis()))
         _uiState.value = MeterConnectionUiState(client = client)
         return true
     }
 
     fun logout() {
+        settingsRepository.clearSession()
         viewModelScope.launch {
             dlmsRepository.release()
             bleRepository.disconnect()

@@ -3,6 +3,7 @@ package com.example.meterlinkind.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import com.example.meterlinkind.data.model.ClientSecurity
+import com.example.meterlinkind.data.model.UserSession
 import com.example.meterlinkind.data.protocol.ClientProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -63,6 +64,24 @@ class SettingsRepository @Inject constructor(
      * counters would reuse an IV under the same key. Never repeats, also across
      * app restarts.
      */
+    /** The saved login, or null if nobody is logged in (expiry is the caller's call). */
+    fun getSession(): UserSession? {
+        val client = prefs.getString("session_client", null)
+            ?.let { name -> ClientProfile.entries.firstOrNull { it.name == name } } ?: return null
+        return UserSession(client, prefs.getLong("session_last_active", 0L))
+    }
+
+    fun saveSession(session: UserSession) {
+        prefs.edit()
+            .putString("session_client", session.client.name)
+            .putLong("session_last_active", session.lastActiveMillis)
+            .apply()
+    }
+
+    fun clearSession() {
+        prefs.edit().remove("session_client").remove("session_last_active").apply()
+    }
+
     @Synchronized
     fun nextFrameCounter(): Long {
         val next = (prefs.getLong("frame_counter", 0L) + 1) and 0xFFFFFFFFL
