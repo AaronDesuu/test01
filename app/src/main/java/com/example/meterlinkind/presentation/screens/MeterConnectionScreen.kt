@@ -132,7 +132,7 @@ fun MeterConnectionScreen(
     var showScanner by rememberSaveable { mutableStateOf(false) }
     // Declared last, so Back closes the scanner before anything else.
     BackHandler(enabled = showScanner) { showScanner = false }
-    BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
+    BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.slideClosed() } }
     // From any screen: reconnect to the last meter, or scan for one.
     val connect = {
         val device = connection.selectedDevice
@@ -158,7 +158,7 @@ fun MeterConnectionScreen(
                 navigate = navigate,
                 logout = viewModel::logout,
                 connect = connect,
-                closeDrawer = { scope.launch { drawerState.close() } },
+                closeDrawer = { scope.launch { drawerState.slideClosed() } },
                 connectionViewModel = viewModel
             )
         }
@@ -746,3 +746,11 @@ fun CopyableText(
         )
     )
 }
+/**
+ * Closes the drawer with a visible slide. Material 3's own close() is quick enough
+ * that the drawer seems to vanish, especially while the next screen is drawn.
+ */
+private suspend fun DrawerState.slideClosed() =
+    animateTo(DrawerValue.Closed, tween(DRAWER_CLOSE_MS, easing = FastOutSlowInEasing))
+
+private const val DRAWER_CLOSE_MS = 300
