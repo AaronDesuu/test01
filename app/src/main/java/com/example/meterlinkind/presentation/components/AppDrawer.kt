@@ -13,10 +13,12 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AvTimer
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +45,8 @@ private val METER_ENTRIES = listOf(
     DrawerEntry("extregister", "Extended Register", Icons.Default.AvTimer),
     DrawerEntry("profile", "Profile Generic", Icons.Default.TableChart),
     DrawerEntry("clock", "Clock", Icons.Default.Schedule),
+    DrawerEntry("disconnect", "Disconnect Control", Icons.Default.PowerSettingsNew),
+    DrawerEntry("limiter", "Limiter", Icons.Default.Tune),
 )
 
 private val ACCOUNT_ENTRIES = listOf(

@@ -8,6 +8,7 @@ import com.example.meterlinkind.data.protocol.ClockValue
 import com.example.meterlinkind.data.protocol.CosemAttribute
 import com.example.meterlinkind.data.protocol.CosemObject
 import com.example.meterlinkind.data.protocol.CosemStructures
+import com.example.meterlinkind.data.protocol.DisconnectControl
 import com.example.meterlinkind.data.protocol.DlmsData
 import com.example.meterlinkind.data.protocol.InterfaceClass
 import com.example.meterlinkind.data.protocol.ObisCode
@@ -24,6 +25,7 @@ import com.example.meterlinkind.data.repository.SavedMeter
 import com.example.meterlinkind.data.repository.SettingsRepository
 import com.example.meterlinkind.data.repository.StoredObjectList
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -88,6 +90,8 @@ data class ObjectBrowserUiState(
     /** scaler_unit of Registers read so far; kept across reconnects to the same meter. */
     val scalers: Map<ObisCode, ScalerUnit> = emptyMap(),
     val clockMessage: String? = null,
+    /** Result of the last Disconnect / Reconnect. */
+    val relayMessage: String? = null,
     /** Decimal places for floats and scaled values; null = as sent. From Settings. */
     val decimals: Int? = 2,
     /** Mode the buffer reader opens with. From Settings. */
@@ -125,7 +129,7 @@ class ObjectBrowserViewModel @Inject constructor(
                 if (state is BleConnectionState.Disconnected || state is BleConnectionState.Error) {
                     // Values belong to the session; the stored object list stays.
                     // scalers stay: they don't change while the meter is away.
-                    _uiState.update { it.copy(attributes = emptyMap(), buffers = emptyMap(), clockMessage = null) }
+                    _uiState.update { it.copy(attributes = emptyMap(), buffers = emptyMap(), clockMessage = null, relayMessage = null) }
                 }
             }
         }
@@ -319,6 +323,26 @@ class ObjectBrowserViewModel @Inject constructor(
     }
 
     /**
+     * Switches the meter's relay with remote_disconnect / remote_reconnect,
+     * then reads control state back, and output state once the relay has moved.
+     */
+    fun switchRelay(control: CosemObject, reconnect: Boolean) {
+        viewModelScope.launch {
+            val verb = if (reconnect) "Reconnect" else "Disconnect"
+            _uiState.update { it.copy(relayMessage = "$verb...") }
+            val error = dlmsRepository.invoke(DisconnectControl.method(control.obis, reconnect), DisconnectControl.PARAMETER)
+            _uiState.update { it.copy(relayMessage = if (error == null) "$verb sent" else "$verb refused: $error") }
+            if (error == null) {
+                readNow(control, DisconnectControl.CONTROL_STATE)
+                // The relay itself switches seconds after the command (seen on the FT5AB: an
+                // immediate read still showed the old output_state).
+                delay(RELAY_SETTLE_MS)
+                readNow(control, DisconnectControl.OUTPUT_STATE)
+            }
+        }
+    }
+
+    /**
      * Sets [clock]'s time to the phone's local time. Keeps the deviation the
      * meter reported in its last time reading, if any.
      */
@@ -346,6 +370,7 @@ class ObjectBrowserViewModel @Inject constructor(
 
     companion object {
         const val VALUE = 2
+        const val RELAY_SETTLE_MS = 3000L
         const val SCALER_UNIT = 3
         const val BUFFER = 2
         const val CAPTURE_OBJECTS = 3

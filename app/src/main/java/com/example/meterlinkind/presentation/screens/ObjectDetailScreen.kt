@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -47,6 +49,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.meterlinkind.data.protocol.AccessMode
 import com.example.meterlinkind.data.protocol.ClientProfile
+import com.example.meterlinkind.data.protocol.DisconnectControl
+import com.example.meterlinkind.data.protocol.Limiter
 import com.example.meterlinkind.data.protocol.CosemObject
 import com.example.meterlinkind.data.protocol.CosemStructures
 import com.example.meterlinkind.data.protocol.DlmsData
@@ -194,6 +198,16 @@ private fun AttributesTab(
                         note = "Not readable by this client", enabled = false,
                     ) {}
                 }
+            }
+        }
+        if (obj.classId == InterfaceClass.DISCONNECT_CONTROL && connection.client == ClientProfile.UTILITY_SETTINGS) {
+            item {
+                RelayCard(
+                    meter = connection.serialNumber ?: connection.selectedDeviceName ?: "the meter",
+                    message = browser.relayMessage,
+                    enabled = online,
+                    onSwitch = { reconnect -> browserViewModel.switchRelay(obj, reconnect) },
+                )
             }
         }
         if (obj.classId == InterfaceClass.CLOCK && connection.client == ClientProfile.UTILITY_SETTINGS &&
@@ -347,6 +361,49 @@ private fun BufferTable(
     }
 }
 
+/** Gurux's Disconnect / Reconnect buttons; both switch the meter's relay, so each asks first. */
+@Composable
+private fun RelayCard(meter: String, message: String?, enabled: Boolean, onSwitch: (reconnect: Boolean) -> Unit) {
+    var confirm by rememberSaveable { mutableStateOf<Boolean?>(null) } // true = reconnect
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Relay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Disconnect cuts the supply behind this meter; Reconnect restores it.", style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { confirm = false },
+                    enabled = enabled,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.weight(1f)
+                ) { Text("Disconnect") }
+                OutlinedButton(onClick = { confirm = true }, enabled = enabled, modifier = Modifier.weight(1f)) { Text("Reconnect") }
+            }
+            message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        }
+    }
+    confirm?.let { reconnect ->
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text(if (reconnect) "Reconnect $meter?" else "Disconnect $meter?") },
+            text = {
+                Text(
+                    if (reconnect) "The meter's relay closes and supply is restored."
+                    else "The meter's relay opens and the supply behind it is cut."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirm = null; onSwitch(reconnect) }) { Text(if (reconnect) "Reconnect" else "Disconnect") }
+            },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } },
+        )
+    }
+}
+
 @Composable
 private fun SetClockCard(meter: String, clockName: String, message: String?, enabled: Boolean, onSet: () -> Unit) {
     var confirm by rememberSaveable { mutableStateOf(false) }
@@ -385,6 +442,16 @@ private fun SetClockCard(meter: String, clockName: String, message: String?, ena
 private fun formatValue(classId: Int, attribute: Int, data: DlmsData, scaler: ScalerUnit?, decimals: Int?): String = when {
     attribute == 1 && data is DlmsData.OctetString && data.bytes.size == 6 -> ObisCode.of(data.bytes).toString()
     InterfaceClass.hasScaler(classId) && attribute == ObjectBrowserViewModel.VALUE && scaler != null -> scaler.format(data, decimals)
+    classId == InterfaceClass.DISCONNECT_CONTROL && attribute == DisconnectControl.OUTPUT_STATE && data is DlmsData.Bool ->
+        if (data.value) "Connected (true)" else "Disconnected (false)"
+    classId == InterfaceClass.DISCONNECT_CONTROL && attribute == DisconnectControl.CONTROL_STATE && data is DlmsData.Enum ->
+        "${DisconnectControl.controlState(data.value)} (${data.value})"
+    classId == InterfaceClass.DISCONNECT_CONTROL && attribute == DisconnectControl.CONTROL_MODE && data is DlmsData.Enum ->
+        "Mode ${data.value}"
+    classId == InterfaceClass.LIMITER && attribute == 2 -> Limiter.valueDefinition(data) ?: data.display()
+    classId == InterfaceClass.LIMITER && (attribute == 6 || attribute == 7) && data is DlmsData.Integer -> "${data.value} s"
+    classId == InterfaceClass.LIMITER && attribute == 8 -> Limiter.emergencyProfile(data) ?: data.display()
+    classId == InterfaceClass.LIMITER && attribute == 11 -> Limiter.actions(data) ?: data.display()
     InterfaceClass.hasScaler(classId) && attribute == ObjectBrowserViewModel.SCALER_UNIT ->
         ScalerUnit.parse(data)?.let { "$it  (scaler ${it.scaler}, unit ${it.unit})" } ?: data.display()
     classId == InterfaceClass.PROFILE_GENERIC && attribute == ObjectBrowserViewModel.CAPTURE_OBJECTS ->

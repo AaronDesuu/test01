@@ -31,6 +31,8 @@ object InterfaceClass {
     const val PROFILE_GENERIC = 7
     const val CLOCK = 8
     const val ASSOCIATION_LN = 15
+    const val DISCONNECT_CONTROL = 70
+    const val LIMITER = 71
 
     private val ATTRIBUTES = mapOf(
         DATA to listOf("logical_name", "value"),
@@ -39,6 +41,12 @@ object InterfaceClass {
         PROFILE_GENERIC to listOf(
             "logical_name", "buffer", "capture_objects", "capture_period",
             "sort_method", "sort_object", "entries_in_use", "profile_entries",
+        ),
+        DISCONNECT_CONTROL to listOf("logical_name", "output_state", "control_state", "control_mode"),
+        LIMITER to listOf(
+            "logical_name", "monitored_value", "threshold_active", "threshold_normal", "threshold_emergency",
+            "min_over_threshold_duration", "min_under_threshold_duration", "emergency_profile",
+            "emergency_profile_group_id_list", "emergency_profile_active", "actions",
         ),
         CLOCK to listOf(
             "logical_name", "time", "time_zone", "status", "daylight_savings_begin",
@@ -53,6 +61,8 @@ object InterfaceClass {
         PROFILE_GENERIC -> "Profile Generic"
         CLOCK -> "Clock"
         ASSOCIATION_LN -> "Association LN"
+        DISCONNECT_CONTROL -> "Disconnect Control"
+        LIMITER -> "Limiter"
         else -> "Class $classId"
     }
 
@@ -134,6 +144,60 @@ object Units {
 
     /** Empty for "other unit" (254) and "count" (255). */
     fun symbol(unit: Int): String = SYMBOLS[unit] ?: "unit $unit"
+}
+
+/** Disconnect Control (class 70): attribute meanings and methods (IEC 62056-6-2 §4.5.8). */
+object DisconnectControl {
+    const val OUTPUT_STATE = 2
+    const val CONTROL_STATE = 3
+    const val CONTROL_MODE = 4
+
+    fun controlState(value: Int): String = when (value) {
+        0 -> "Disconnected"
+        1 -> "Connected"
+        2 -> "Ready for reconnection"
+        else -> "state $value"
+    }
+
+    /** remote_disconnect (method 1) or remote_reconnect (method 2), each with parameter integer 0. */
+    fun method(obis: ObisCode, reconnect: Boolean): CosemMethod =
+        CosemMethod(
+            InterfaceClass.DISCONNECT_CONTROL, obis, if (reconnect) 2 else 1,
+            if (reconnect) "remote_reconnect" else "remote_disconnect"
+        )
+
+    val PARAMETER = byteArrayOf(Axdr.TAG_INT8.toByte(), 0x00)
+}
+
+/** Limiter (class 71) attribute values the way Gurux lays them out. */
+object Limiter {
+    /** monitored_value: {class_id, logical_name, attribute_index}. */
+    fun valueDefinition(data: DlmsData): String? {
+        val f = (data as? DlmsData.Structure)?.items ?: return null
+        val classId = (f.getOrNull(0) as? DlmsData.Integer)?.value ?: return null
+        val obis = (f.getOrNull(1) as? DlmsData.OctetString)?.bytes?.takeIf { it.size == 6 }?.let(ObisCode::of) ?: return null
+        val attribute = (f.getOrNull(2) as? DlmsData.Integer)?.value ?: return null
+        val name = ObjectRegistry.find(obis)?.name?.let { "$it, " } ?: ""
+        return "$name$obis attr $attribute (class $classId)"
+    }
+
+    /** emergency_profile: {id, activation_time, duration}. */
+    fun emergencyProfile(data: DlmsData): String? {
+        val f = (data as? DlmsData.Structure)?.items ?: return null
+        if (f.size != 3) return null
+        return "ID ${f[0].display()}, activation ${f[1].display()}, duration ${f[2].display()} s"
+    }
+
+    /** actions: {action_over_threshold, action_under_threshold}, each {script logical name, selector}. */
+    fun actions(data: DlmsData): String? {
+        val f = (data as? DlmsData.Structure)?.items ?: return null
+        fun one(d: DlmsData?): String? {
+            val a = (d as? DlmsData.Structure)?.items ?: return null
+            val script = (a.getOrNull(0) as? DlmsData.OctetString)?.bytes?.takeIf { it.size == 6 }?.let(ObisCode::of)
+            return "script ${script ?: "-"}, selector ${a.getOrNull(1)?.display() ?: "-"}"
+        }
+        return "Over: ${one(f.getOrNull(0)) ?: "-"}\nUnder: ${one(f.getOrNull(1)) ?: "-"}"
+    }
 }
 
 // ---------------------------------------------------------------------------

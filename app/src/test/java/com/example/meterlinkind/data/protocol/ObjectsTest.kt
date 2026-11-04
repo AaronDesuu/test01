@@ -74,6 +74,35 @@ class ObjectsTest {
     }
 
     @Test
+    fun disconnectControlMethods() {
+        val obis = ObisCode.parse("0.0.96.3.10.255")
+        // remote_disconnect / remote_reconnect with parameter integer 0
+        assertArrayEquals(
+            hex("C3 01 C1 0046 000060030AFF 01 01 0F 00"),
+            Action.request(DisconnectControl.method(obis, reconnect = false), DisconnectControl.PARAMETER)
+        )
+        assertArrayEquals(
+            hex("C3 01 C1 0046 000060030AFF 02 01 0F 00"),
+            Action.request(DisconnectControl.method(obis, reconnect = true), DisconnectControl.PARAMETER)
+        )
+        assertEquals("Connected", DisconnectControl.controlState(1))
+        assertEquals("Ready for reconnection", DisconnectControl.controlState(2))
+    }
+
+    @Test
+    fun limiterValues() {
+        // monitored_value {class 3, 1.0.12.7.0.255 (Voltage), attr 2}
+        val monitored = Axdr.decode(hex("02 03 12 0003 09 06 01000C0700FF 0F 02"))
+        assertTrue(Limiter.valueDefinition(monitored)!!.endsWith("1.0.12.7.0.255 attr 2 (class 3)"))
+        // emergency_profile {0, date-time, 0}
+        val profile = Axdr.decode(hex("02 03 12 0000 09 0C 07EA0B0402000000FF800000 06 00000000"))
+        assertEquals("ID 0, activation 2026-11-04 00:00:00, duration 0 s", Limiter.emergencyProfile(profile))
+        // actions {{script, 1}, {script, 2}}
+        val actions = Axdr.decode(hex("02 02 02 02 09 06 00000A006AFF 12 0001 02 02 09 06 00000A006AFF 12 0002"))
+        assertEquals("Over: script 0.0.10.0.106.255, selector 1\nUnder: script 0.0.10.0.106.255, selector 2", Limiter.actions(actions))
+    }
+
+    @Test
     fun roundsToChosenDecimals() {
         // THD Voltage as the snapshot sent it: float32 4.0099998
         val thd = DlmsData.Float(4.0099998f.toDouble(), singlePrecision = true)

@@ -12,6 +12,7 @@ import com.example.meterlinkind.data.protocol.ByteLink
 import com.example.meterlinkind.data.protocol.ClientProfile
 import com.example.meterlinkind.data.protocol.Conformance
 import com.example.meterlinkind.data.protocol.CosemAttribute
+import com.example.meterlinkind.data.protocol.CosemMethod
 import com.example.meterlinkind.data.protocol.CosemSet
 import com.example.meterlinkind.data.protocol.CosemStructures
 import com.example.meterlinkind.data.protocol.DataAccessResult
@@ -324,6 +325,24 @@ class DlmsRepository @Inject constructor(
     }
 
     /** SETs one attribute to [value] (one encoded `Data`); null on success, else the reason. */
+    /** ACTIONs [target] with [parameter] (one encoded `Data`, or null); null on success, else the reason. */
+    suspend fun invoke(target: CosemMethod, parameter: ByteArray?): String? = operationMutex.withLock {
+        if (association == null) return@withLock "Not connected to a meter"
+        Log.d(TAG, "ACTION ${target.name} (class ${target.classId}, ${target.obis}, method ${target.method})")
+        try {
+            when (val result = Action.parseResponse(exchangeInSession(Action.request(target, parameter)))) {
+                is ActionResult.Success -> null
+                is ActionResult.Failure -> result.reason
+                is ActionResult.ServiceFailure -> result.message
+            }
+        } catch (e: TransportException) {
+            e.message ?: "No response"
+        } catch (e: Exception) {
+            Log.e(TAG, "ACTION ${target.name} failed", e)
+            "Bad response: ${e.message}"
+        }
+    }
+
     suspend fun write(target: CosemAttribute, value: ByteArray): String? = operationMutex.withLock {
         if (association == null) return@withLock "Not connected to a meter"
         Log.d(TAG, "SET ${target.name} (class ${target.classId}, ${target.obis}, attr ${target.attribute})")

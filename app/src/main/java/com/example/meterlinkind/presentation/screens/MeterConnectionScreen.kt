@@ -190,6 +190,8 @@ private val BROWSER_CLASSES = mapOf(
     "register" to InterfaceClass.REGISTER,
     "extregister" to InterfaceClass.EXTENDED_REGISTER,
     "profile" to InterfaceClass.PROFILE_GENERIC,
+    "disconnect" to InterfaceClass.DISCONNECT_CONTROL,
+    "limiter" to InterfaceClass.LIMITER,
     "clock" to InterfaceClass.CLOCK,
 )
 
@@ -202,6 +204,8 @@ private fun getScreenTitle(screen: String): String = when (screen) {
     "register" -> "Register"
     "extregister" -> "Extended Register"
     "profile" -> "Profile Generic"
+    "disconnect" -> "Disconnect Control"
+    "limiter" -> "Limiter"
     "clock" -> "Clock"
     "settings" -> "Settings"
     "saved" -> "Saved meters"
