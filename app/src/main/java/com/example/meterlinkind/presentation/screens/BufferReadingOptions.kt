@@ -46,7 +46,13 @@ import java.time.LocalTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-private enum class ReadMode { ENTRIES, LAST_DAYS, RANGE, ALL }
+/** The four ways Gurux reads a buffer; Settings picks the one the reader opens with. */
+enum class BufferReadMode(val label: String) {
+    ENTRIES("Read index + count"),
+    LAST_DAYS("Read last days"),
+    RANGE("Read from / to"),
+    ALL("All"),
+}
 
 private val DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
@@ -56,12 +62,13 @@ private val DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
  */
 @Composable
 fun BufferReadingOptions(
+    defaultMode: BufferReadMode,
     enabled: Boolean,
     loading: Boolean,
     progress: String?,
     onRead: (BufferSelection) -> Unit,
 ) {
-    var mode by rememberSaveable { mutableStateOf(ReadMode.LAST_DAYS) }
+    var mode by rememberSaveable { mutableStateOf(defaultMode) }
     var first by rememberSaveable { mutableStateOf("1") }
     var count by rememberSaveable { mutableStateOf("1") }
     var days by rememberSaveable { mutableStateOf("0") }
@@ -72,44 +79,44 @@ fun BufferReadingOptions(
     val fromTime = LocalDateTime.parse(from)
     val toTime = LocalDateTime.parse(to)
     val selection: BufferSelection? = when (mode) {
-        ReadMode.ENTRIES -> {
+        BufferReadMode.ENTRIES -> {
             val f = first.toLongOrNull()?.takeIf { it >= 1 }
             val c = count.toLongOrNull()?.takeIf { it >= 1 }
             if (f != null && c != null) BufferSelection.Entries(f, c) else null
         }
-        ReadMode.LAST_DAYS -> days.toLongOrNull()?.takeIf { it >= 0 }?.let { BufferSelection.LastDays(it) }
-        ReadMode.RANGE -> if (!fromTime.isAfter(toTime)) BufferSelection.Range(fromTime, toTime) else null
-        ReadMode.ALL -> BufferSelection.All
+        BufferReadMode.LAST_DAYS -> days.toLongOrNull()?.takeIf { it >= 0 }?.let { BufferSelection.LastDays(it) }
+        BufferReadMode.RANGE -> if (!fromTime.isAfter(toTime)) BufferSelection.Range(fromTime, toTime) else null
+        BufferReadMode.ALL -> BufferSelection.All
     }
     val problem = when {
         selection != null -> null
-        mode == ReadMode.ENTRIES -> "Index and count start at 1."
-        mode == ReadMode.LAST_DAYS -> "Enter 0 or more days."
+        mode == BufferReadMode.ENTRIES -> "Index and count start at 1."
+        mode == BufferReadMode.LAST_DAYS -> "Enter 0 or more days."
         else -> "From must not be after To."
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Reading", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        ModeRow("Read", mode == ReadMode.ENTRIES, { mode = ReadMode.ENTRIES }) {
-            NumberField(first, { first = it }, mode == ReadMode.ENTRIES)
+        ModeRow("Read", mode == BufferReadMode.ENTRIES, { mode = BufferReadMode.ENTRIES }) {
+            NumberField(first, { first = it }, mode == BufferReadMode.ENTRIES)
             Text("Count")
-            NumberField(count, { count = it }, mode == ReadMode.ENTRIES)
+            NumberField(count, { count = it }, mode == BufferReadMode.ENTRIES)
         }
-        ModeRow("Read last", mode == ReadMode.LAST_DAYS, { mode = ReadMode.LAST_DAYS }) {
-            NumberField(days, { days = it }, mode == ReadMode.LAST_DAYS)
+        ModeRow("Read last", mode == BufferReadMode.LAST_DAYS, { mode = BufferReadMode.LAST_DAYS }) {
+            NumberField(days, { days = it }, mode == BufferReadMode.LAST_DAYS)
             Text(if (days == "0") "days (today)" else "days")
         }
-        ModeRow("Read from", mode == ReadMode.RANGE, { mode = ReadMode.RANGE }) {}
+        ModeRow("Read from", mode == BufferReadMode.RANGE, { mode = BufferReadMode.RANGE }) {}
         Column(
             modifier = Modifier.padding(start = 48.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            DateTimeField(fromTime, mode == ReadMode.RANGE) { from = it.toString() }
+            DateTimeField(fromTime, mode == BufferReadMode.RANGE) { from = it.toString() }
             Text("to", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            DateTimeField(toTime, mode == ReadMode.RANGE) { to = it.toString() }
+            DateTimeField(toTime, mode == BufferReadMode.RANGE) { to = it.toString() }
         }
-        ModeRow("All", mode == ReadMode.ALL, { mode = ReadMode.ALL }) {}
+        ModeRow("All", mode == BufferReadMode.ALL, { mode = BufferReadMode.ALL }) {}
 
         problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         Button(

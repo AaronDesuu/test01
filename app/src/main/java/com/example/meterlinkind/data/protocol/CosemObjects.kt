@@ -89,18 +89,24 @@ object AccessMode {
 data class ScalerUnit(val scaler: Int, val unit: Int) {
     val symbol: String get() = Units.symbol(unit)
 
-    /** [value] scaled, without the unit; null if it isn't a number. */
-    fun scale(value: DlmsData): String? {
+    /** [value] scaled, without the unit, rounded to [decimals] if given; null if it isn't a number. */
+    fun scale(value: DlmsData, decimals: Int? = null): String? {
         val raw = when (value) {
             // Through the displayed text, so a float32 doesn't bring double noise along.
             is DlmsData.Integer, is DlmsData.Float -> value.display().toBigDecimalOrNull()
             else -> null
         } ?: return null
-        return if (scaler == 0) raw.toPlainString() else raw.scaleByPowerOfTen(scaler).stripTrailingZeros().toPlainString()
+        val scaled = if (scaler == 0) raw else raw.scaleByPowerOfTen(scaler)
+        return when {
+            decimals != null -> roundPlain(scaled, decimals)
+            scaler == 0 -> raw.toPlainString()
+            else -> scaled.stripTrailingZeros().toPlainString()
+        }
     }
 
     /** "239.73 V"; the raw display if it isn't a number. */
-    fun format(value: DlmsData): String = scale(value)?.let { if (symbol.isEmpty()) it else "$it $symbol" } ?: value.display()
+    fun format(value: DlmsData, decimals: Int? = null): String =
+        scale(value, decimals)?.let { if (symbol.isEmpty()) it else "$it $symbol" } ?: value.display()
 
     override fun toString(): String = "×10^$scaler" + if (symbol.isEmpty()) "" else " $symbol"
 

@@ -13,7 +13,6 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AvTimer
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
@@ -47,7 +46,6 @@ private val METER_ENTRIES = listOf(
 )
 
 private val ACCOUNT_ENTRIES = listOf(
-    DrawerEntry("keys", "Security Keys", Icons.Default.Key),
     DrawerEntry("settings", "Settings", Icons.Default.Settings),
 )
 

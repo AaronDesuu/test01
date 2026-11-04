@@ -17,8 +17,11 @@ import com.example.meterlinkind.data.protocol.SelectiveAccess
 import com.example.meterlinkind.data.repository.AttributeRead
 import com.example.meterlinkind.data.repository.BleConnectionState
 import com.example.meterlinkind.data.repository.BleRepository
+import com.example.meterlinkind.presentation.screens.BufferReadMode
 import com.example.meterlinkind.data.repository.DlmsRepository
 import com.example.meterlinkind.data.repository.ObjectListStore
+import com.example.meterlinkind.data.repository.SavedMeter
+import com.example.meterlinkind.data.repository.SettingsRepository
 import com.example.meterlinkind.data.repository.StoredObjectList
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -85,6 +88,10 @@ data class ObjectBrowserUiState(
     /** scaler_unit of Registers read so far; kept across reconnects to the same meter. */
     val scalers: Map<ObisCode, ScalerUnit> = emptyMap(),
     val clockMessage: String? = null,
+    /** Decimal places for floats and scaled values; null = as sent. From Settings. */
+    val decimals: Int? = 2,
+    /** Mode the buffer reader opens with. From Settings. */
+    val bufferReadMode: BufferReadMode = BufferReadMode.LAST_DAYS,
 ) {
     fun attribute(obj: CosemObject, attribute: Int): AttributeState = attributes[key(obj, attribute)] ?: AttributeState()
 
@@ -103,10 +110,13 @@ data class ObjectBrowserUiState(
 class ObjectBrowserViewModel @Inject constructor(
     private val dlmsRepository: DlmsRepository,
     private val objectListStore: ObjectListStore,
+    private val settingsRepository: SettingsRepository,
     bleRepository: BleRepository,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(ObjectBrowserUiState())
+    private val _uiState = MutableStateFlow(
+        ObjectBrowserUiState(decimals = settingsRepository.getDecimals(), bufferReadMode = savedReadMode())
+    )
     val uiState: StateFlow<ObjectBrowserUiState> = _uiState.asStateFlow()
 
     init {
@@ -126,7 +136,42 @@ class ObjectBrowserViewModel @Inject constructor(
         val state = _uiState.value
         if (serial == state.meterSerial && client == state.client) return
         val stored = if (serial != null && client != null) objectListStore.load(serial, client) else null
-        _uiState.value = ObjectBrowserUiState(meterSerial = serial, client = client, objectList = stored)
+        _uiState.update {
+            ObjectBrowserUiState(
+                meterSerial = serial, client = client, objectList = stored,
+                decimals = it.decimals, bufferReadMode = it.bufferReadMode,
+            )
+        }
+    }
+
+    // --- Settings ---------------------------------------------------------------
+
+    fun setDecimals(decimals: Int?) {
+        settingsRepository.setDecimals(decimals)
+        _uiState.update { it.copy(decimals = decimals) }
+    }
+
+    fun setBufferReadMode(mode: BufferReadMode) {
+        settingsRepository.setBufferReadMode(mode.name)
+        _uiState.update { it.copy(bufferReadMode = mode) }
+    }
+
+    private fun savedReadMode(): BufferReadMode =
+        BufferReadMode.entries.firstOrNull { it.name == settingsRepository.getBufferReadMode() } ?: BufferReadMode.LAST_DAYS
+
+    fun savedMeters(): List<SavedMeter> = objectListStore.list()
+
+    /** Forgets a saved object list; if it's the one on screen, the lists show "read from meter" again. */
+    fun deleteSavedMeter(meter: SavedMeter) {
+        objectListStore.delete(meter.serial, meter.client)
+        _uiState.update {
+            if (it.meterSerial == meter.serial && it.client == meter.client) it.copy(objectList = null) else it
+        }
+    }
+
+    fun deleteAllSavedMeters() {
+        objectListStore.deleteAll()
+        _uiState.update { it.copy(objectList = null) }
     }
 
     /** Objects of [classId] in the meter's list, in the meter's order. */

@@ -157,6 +157,19 @@ object CosemDateTime {
     }
 }
 
+/**
+ * [DlmsData.display], with floats rounded to [decimals] places (trailing
+ * zeros dropped); null keeps every digit the meter sent.
+ */
+fun DlmsData.displayNumber(decimals: Int?): String {
+    if (decimals == null || this !is DlmsData.Float) return display()
+    return display().toBigDecimalOrNull()?.let { roundPlain(it, decimals) } ?: display()
+}
+
+/** [value] rounded half-up to at most [decimals] places, as plain text without trailing zeros. */
+fun roundPlain(value: java.math.BigDecimal, decimals: Int): String =
+    value.setScale(decimals, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+
 fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
 private fun ByteArray.printableAsciiOrNull(): String? =

@@ -64,6 +64,20 @@ class SettingsRepository @Inject constructor(
      * counters would reuse an IV under the same key. Never repeats, also across
      * app restarts.
      */
+    /** Decimal places floats are shown with; null = as the meter sent them. Default 2. */
+    fun getDecimals(): Int? = prefs.getInt("display_decimals", 2).takeIf { it >= 0 }
+
+    fun setDecimals(decimals: Int?) {
+        prefs.edit().putInt("display_decimals", decimals ?: -1).apply()
+    }
+
+    /** Name of the mode the buffer reader opens with (`BufferReadMode`). */
+    fun getBufferReadMode(): String = prefs.getString("buffer_read_mode", null) ?: "LAST_DAYS"
+
+    fun setBufferReadMode(mode: String) {
+        prefs.edit().putString("buffer_read_mode", mode).apply()
+    }
+
     /** The saved login, or null if nobody is logged in (expiry is the caller's call). */
     fun getSession(): UserSession? {
         val client = prefs.getString("session_client", null)

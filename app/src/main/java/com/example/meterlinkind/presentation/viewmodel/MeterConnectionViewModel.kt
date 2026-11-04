@@ -176,13 +176,6 @@ class MeterConnectionViewModel @Inject constructor(
         }
     }
 
-    fun updateSettings(account: String, password: String, address: String, rank: String, scan: String, tick: String, interval: String) {
-        dlmsRepository.updateSettings(account, password, address, rank, scan, tick, interval)
-    }
-
-    fun getSettings(): Map<String, String> {
-        return dlmsRepository.getSettings()
-    }
 
     fun disconnect() {
         viewModelScope.launch {

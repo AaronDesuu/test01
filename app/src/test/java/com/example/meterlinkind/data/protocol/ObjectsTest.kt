@@ -74,6 +74,19 @@ class ObjectsTest {
     }
 
     @Test
+    fun roundsToChosenDecimals() {
+        // THD Voltage as the snapshot sent it: float32 4.0099998
+        val thd = DlmsData.Float(4.0099998f.toDouble(), singlePrecision = true)
+        assertEquals("4.0099998", thd.displayNumber(null))
+        assertEquals("4.01", thd.displayNumber(2))
+        assertEquals("4.01", thd.displayNumber(3))
+        assertEquals("240", DlmsData.Float(240.0, singlePrecision = true).displayNumber(2))
+        assertEquals("78", DlmsData.Integer(Axdr.TAG_UINT16, 78).displayNumber(2)) // integers untouched
+        assertEquals("4.01 %", ScalerUnit(0, 56).format(thd, 2))
+        assertEquals("239.7", ScalerUnit(-2, 35).scale(DlmsData.Integer(Axdr.TAG_UINT16, 23973), 1))
+    }
+
+    @Test
     fun float32DisplaysAtSinglePrecision() {
         // 239.73 as the meter's block voltage column sends it
         assertEquals("239.73", Axdr.decode(hex("17 436FBAE1")).display())

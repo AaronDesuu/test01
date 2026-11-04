@@ -14,6 +14,9 @@ import javax.inject.Singleton
 /** A meter's object list as read from it, with when it was read. */
 data class StoredObjectList(val readAtMillis: Long, val objects: List<ObjectListEntry>)
 
+/** One saved object list, as Settings lists them. */
+data class SavedMeter(val serial: String, val client: ClientProfile, val readAtMillis: Long, val objectCount: Int)
+
 /**
  * Keeps each meter's object list (current association, attribute 2) on the
  * phone, one JSON file per meter serial and client, so it is read from the
@@ -47,6 +50,24 @@ class ObjectListStore @Inject constructor(
         dir.mkdirs()
         val json = Json(list.readAtMillis, list.objects.map { JsonEntry(it.classId, it.version, it.obis.toString(), it.attributeAccess) })
         file(serial, client).writeText(gson.toJson(json))
+    }
+
+    /** Every saved list, newest first. */
+    fun list(): List<SavedMeter> =
+        dir.listFiles { f -> f.name.endsWith(".json") }.orEmpty().mapNotNull { file ->
+            val base = file.name.removeSuffix(".json")
+            val client = ClientProfile.entries.firstOrNull { base.endsWith("_" + it.name.lowercase()) } ?: return@mapNotNull null
+            val serial = base.removeSuffix("_" + client.name.lowercase())
+            val stored = load(serial, client) ?: return@mapNotNull null
+            SavedMeter(serial, client, stored.readAtMillis, stored.objects.size)
+        }.sortedByDescending { it.readAtMillis }
+
+    fun delete(serial: String, client: ClientProfile) {
+        file(serial, client).delete()
+    }
+
+    fun deleteAll() {
+        dir.listFiles().orEmpty().forEach { it.delete() }
     }
 
     private fun file(serial: String, client: ClientProfile): File {

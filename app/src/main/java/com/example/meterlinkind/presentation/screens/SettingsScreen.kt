@@ -1,157 +1,207 @@
 package com.example.meterlinkind.presentation.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.meterlinkind.presentation.components.RoleBadge
 import com.example.meterlinkind.presentation.viewmodel.MeterConnectionViewModel
+import com.example.meterlinkind.presentation.viewmodel.ObjectBrowserViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Decimals choices: null keeps what the meter sent. */
+private val DECIMAL_OPTIONS = listOf<Int?>(null, 2, 3)
+
+/** Two sections: Account & security, and Data & display. */
 @Composable
 fun SettingsScreen(
-    viewModel: MeterConnectionViewModel,
-    onBack: () -> Unit,
+    connectionViewModel: MeterConnectionViewModel,
+    browserViewModel: ObjectBrowserViewModel,
+    onOpenKeys: () -> Unit,
+    onOpenSavedMeters: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val settings = remember { viewModel.getSettings() }
-    var account by remember { mutableStateOf(settings["account"] ?: "") }
-    var password by remember { mutableStateOf(settings["password"] ?: "3030303030303030") }
-    var address by remember { mutableStateOf(settings["address"] ?: "41") }
-    var rank by remember { mutableStateOf(settings["rank"] ?: "03") }
-    var scan by remember { mutableStateOf(settings["scan"] ?: "3000") }
-    var tick by remember { mutableStateOf(settings["tick"] ?: "150") }
-    var interval by remember { mutableStateOf(settings["interval"] ?: "100") }
+    val connection by connectionViewModel.uiState.collectAsState()
+    val browser by browserViewModel.uiState.collectAsState()
+    val savedCount = remember(browser.objectList) { browserViewModel.savedMeters().size }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            "Authentication Configuration",
-            style = MaterialTheme.typography.titleMedium
-        )
+        SectionTitle("Account & security")
+        SettingsCard {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(connection.client?.label ?: "Not logged in", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Logs out after 3 days without using the app",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                connection.client?.let { RoleBadge(it) }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            NavRow("Security keys", "Password, block cipher, authentication and broadcast keys", onOpenKeys)
+        }
 
-        OutlinedTextField(
-            value = account,
-            onValueChange = { if (it.length <= 8) account = it },
-            label = { Text("Account") },
-            modifier = Modifier.fillMaxWidth(),
-            supportingText = { Text("${account.length}/8 chars max") }
-        )
-
-        OutlinedTextField(
-            value = password,
-            onValueChange = { if (it.length <= 32) password = it },
-            label = { Text("Password/Global Key (hex)") },
-            modifier = Modifier.fillMaxWidth(),
-            supportingText = { Text("${password.length/2.0}/16.0 bytes max") }
-        )
-
-        OutlinedTextField(
-            value = address,
-            onValueChange = { address = it },
-            label = { Text("Logical Address (hex)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = rank,
-            onValueChange = { rank = it },
-            label = { Text("Rank") },
-            modifier = Modifier.fillMaxWidth(),
-            supportingText = { Text("00=Super, 01=Admin, 03=Reader") }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            "Timing Configuration",
-            style = MaterialTheme.typography.titleMedium
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = scan,
-                onValueChange = { scan = it },
-                label = { Text("Scan") },
-                modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-
-            OutlinedTextField(
-                value = tick,
-                onValueChange = { tick = it },
-                label = { Text("Tick") },
-                modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        SectionTitle("Data & display")
+        SettingsCard {
+            ReadModeRow(browser.bufferReadMode, browserViewModel::setBufferReadMode)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Decimals", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Rounds measured values: 4.0099998 shows as 4.01 at 2.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    DECIMAL_OPTIONS.forEachIndexed { i, option ->
+                        SegmentedButton(
+                            selected = browser.decimals == option,
+                            onClick = { browserViewModel.setDecimals(option) },
+                            shape = SegmentedButtonDefaults.itemShape(i, DECIMAL_OPTIONS.size),
+                            label = { Text(option?.toString() ?: "As sent") }
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            NavRow(
+                "Saved meters",
+                when (savedCount) {
+                    0 -> "No object lists saved"
+                    1 -> "1 object list saved"
+                    else -> "$savedCount object lists saved"
+                },
+                onOpenSavedMeters
             )
         }
 
-        OutlinedTextField(
-            value = interval,
-            onValueChange = { interval = it },
-            label = { Text("Interval") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        OutlinedButton(
+            onClick = connectionViewModel::logout,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
         ) {
-            Button(
-                onClick = {
-                    account = ""
-                    password = "3030303030303030"
-                    address = "41"
-                    rank = "03"
-                    scan = "3000"
-                    tick = "150"
-                    interval = "100"
-                },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary
-                )
-            ) {
-                Text("Reset to Default")
-            }
+            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("  Log out")
+        }
+    }
+}
 
-            Button(
-                onClick = {
-                    viewModel.updateSettings(account, password, address, rank, scan, tick, interval)
-                    onBack()
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Save Settings")
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+    )
+}
+
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(content = content)
+    }
+}
+
+@Composable
+private fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+    }
+}
+
+/** The mode the buffer reader opens with, picked from a menu. */
+@Composable
+private fun ReadModeRow(mode: BufferReadMode, onChange: (BufferReadMode) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { open = true }
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Buffer reading starts at", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "The option the Reading box opens with",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                mode.label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier
+                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            BufferReadMode.entries.forEach {
+                DropdownMenuItem(text = { Text(it.label) }, onClick = { onChange(it); open = false })
             }
         }
     }

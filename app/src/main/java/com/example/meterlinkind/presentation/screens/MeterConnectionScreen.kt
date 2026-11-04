@@ -55,12 +55,20 @@ fun MeterConnectionScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var currentScreen by rememberSaveable { mutableStateOf("home") }
+    var keysFromSettings by rememberSaveable { mutableStateOf(false) }
     val connection by viewModel.uiState.collectAsState()
     val loggedInClient = connection.client
 
     if (loggedInClient == null) {
         // Show the keys first, so they can be checked before connecting.
-        LoginScreen(onLogin = { user, pass -> viewModel.login(user, pass).also { if (it) currentScreen = "keys" } })
+        LoginScreen(onLogin = { user, pass ->
+            viewModel.login(user, pass).also {
+                if (it) {
+                    keysFromSettings = false
+                    currentScreen = "keys"
+                }
+            }
+        })
         return
     }
 
@@ -72,7 +80,12 @@ fun MeterConnectionScreen(
 
     BackHandler(enabled = openObject != null) { openObis = null }
 
+    // Sub-pages of Settings go back to Settings; Security Keys right after login goes on to Home.
+    val parentRoute = SUB_PAGES[currentScreen]?.takeIf { currentScreen != "keys" || keysFromSettings }
+    BackHandler(enabled = openObject == null && parentRoute != null) { navigate(parentRoute!!) }
+
     var showScanner by rememberSaveable { mutableStateOf(false) }
+    // Declared last, so Back closes the scanner before anything else.
     BackHandler(enabled = showScanner) { showScanner = false }
     // From any screen: reconnect to the last meter, or scan for one.
     val connect = {
@@ -105,6 +118,10 @@ fun MeterConnectionScreen(
                     navigationIcon = {
                         if (openObject != null) {
                             IconButton(onClick = { openObis = null }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            }
+                        } else if (parentRoute != null) {
+                            IconButton(onClick = { navigate(parentRoute) }) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                             }
                         } else {
@@ -142,12 +159,18 @@ fun MeterConnectionScreen(
                 )
                 currentScreen == "keys" -> SecurityKeysScreen(
                     viewModel = viewModel,
-                    onDone = { navigate("home") },
+                    onDone = { navigate(if (keysFromSettings) "settings" else "home") },
                     modifier = Modifier.padding(padding)
                 )
                 currentScreen == "settings" -> SettingsScreen(
-                    viewModel = viewModel,
-                    onBack = { navigate("home") },
+                    connectionViewModel = viewModel,
+                    browserViewModel = browserViewModel,
+                    onOpenKeys = { keysFromSettings = true; navigate("keys") },
+                    onOpenSavedMeters = { navigate("saved") },
+                    modifier = Modifier.padding(padding)
+                )
+                currentScreen == "saved" -> SavedMetersScreen(
+                    browserViewModel = browserViewModel,
                     modifier = Modifier.padding(padding)
                 )
                 else -> HomeContent(
@@ -170,6 +193,9 @@ private val BROWSER_CLASSES = mapOf(
     "clock" to InterfaceClass.CLOCK,
 )
 
+/** Pages reached from Settings, and where Back takes them. */
+private val SUB_PAGES = mapOf("saved" to "settings", "keys" to "settings")
+
 private fun getScreenTitle(screen: String): String = when (screen) {
     "home" -> "Meter Link"
     "data" -> "Data"
@@ -178,6 +204,7 @@ private fun getScreenTitle(screen: String): String = when (screen) {
     "profile" -> "Profile Generic"
     "clock" -> "Clock"
     "settings" -> "Settings"
+    "saved" -> "Saved meters"
     "keys" -> "Security Keys"
     else -> "Meter Link"
 }
