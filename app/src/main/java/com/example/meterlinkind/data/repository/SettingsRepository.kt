@@ -40,12 +40,16 @@ class SettingsRepository @Inject constructor(
     fun getClientSecurity(client: ClientProfile): ClientSecurity {
         val p = client.name.lowercase()
         return ClientSecurity(
-            authPassword = prefs.getString("${p}_auth_password", null) ?: ClientSecurity.DEFAULT,
-            blockCipherKey = prefs.getString("${p}_block_cipher_key", null) ?: ClientSecurity.DEFAULT,
-            authenticationKey = prefs.getString("${p}_authentication_key", null) ?: ClientSecurity.DEFAULT,
-            broadcastKey = prefs.getString("${p}_broadcast_key", null) ?: ClientSecurity.DEFAULT,
+            authPassword = stored("${p}_auth_password"),
+            blockCipherKey = stored("${p}_block_cipher_key"),
+            authenticationKey = stored("${p}_authentication_key"),
+            broadcastKey = stored("${p}_broadcast_key"),
         )
     }
+
+    /** A saved key as hex, accepting the older 16-character ASCII form. */
+    private fun stored(key: String): String =
+        prefs.getString(key, null)?.let(ClientSecurity::fromStored) ?: ClientSecurity.DEFAULT
 
     fun saveClientSecurity(client: ClientProfile, security: ClientSecurity) {
         val p = client.name.lowercase()

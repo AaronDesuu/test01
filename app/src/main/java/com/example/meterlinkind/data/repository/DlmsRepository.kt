@@ -150,7 +150,7 @@ class DlmsRepository @Inject constructor(
             return null
         }
 
-        if (!security.isValid) return "Keys must be ${ClientSecurity.KEY_LENGTH} characters each"
+        if (!security.isValid) return "Keys must be ${ClientSecurity.KEY_BYTES} bytes each"
         val secure = SecureChannel(
             CLIENT_SYSTEM_TITLE, security.cipherKeys, client.securityControl, settingsRepository::nextFrameCounter
         )
