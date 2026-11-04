@@ -23,7 +23,7 @@ class ObjectsTest {
         assertEquals(19, ObjectRegistry.ofClass(InterfaceClass.PROFILE_GENERIC).size)
         assertEquals(2, ObjectRegistry.ofClass(InterfaceClass.CLOCK).size)
         val blockLoad = ObjectRegistry.find(ObisCode.parse("1.0.99.1.0.255"))!!
-        assertEquals("Block load profile", blockLoad.name)
+        assertEquals("Block Load Profile", blockLoad.name)
         assertEquals(408, blockLoad.index)
         assertEquals(1, blockLoad.version)
         assertEquals("Meter serial number", ObjectRegistry.find(PublicObjects.SERIAL_NUMBER.obis)!!.name)
