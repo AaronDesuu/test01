@@ -17,6 +17,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
@@ -26,12 +28,15 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -50,7 +55,9 @@ import com.example.meterlinkind.data.protocol.ObisCode
 import com.example.meterlinkind.presentation.components.ConnectionStrip
 import com.example.meterlinkind.presentation.viewmodel.AttributeState
 import com.example.meterlinkind.presentation.viewmodel.BufferSelection
+import com.example.meterlinkind.presentation.viewmodel.MeterConnectionUiState
 import com.example.meterlinkind.presentation.viewmodel.MeterConnectionViewModel
+import com.example.meterlinkind.presentation.viewmodel.ObjectBrowserUiState
 import com.example.meterlinkind.presentation.viewmodel.ObjectBrowserViewModel
 import com.example.meterlinkind.presentation.viewmodel.ProfileBufferState
 import java.time.LocalDateTime
@@ -67,22 +74,64 @@ fun ObjectDetailScreen(
     val connection by connectionViewModel.uiState.collectAsState()
     val browser by browserViewModel.uiState.collectAsState()
     val online = connection.isDlmsConnected
-    val isProfile = obj.classId == InterfaceClass.PROFILE_GENERIC
+    // Profile Generic gets two tabs: its attributes, and the buffer reader with its table.
+    val hasBufferTab = obj.classId == InterfaceClass.PROFILE_GENERIC && obj.canRead(ObjectBrowserViewModel.BUFFER)
+    var tab by rememberSaveable(obj.obis.toString()) { mutableIntStateOf(0) }
 
-    LazyColumn(
+    Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item {
-            ConnectionStrip(
-                deviceName = connection.selectedDeviceName,
-                serialNumber = connection.serialNumber,
-                connectionState = connection.connectionState,
-                associated = online,
-            )
+        ConnectionStrip(
+            deviceName = connection.selectedDeviceName,
+            serialNumber = connection.serialNumber,
+            connectionState = connection.connectionState,
+            associated = online,
+        )
+        if (hasBufferTab) {
+            PrimaryTabRow(selectedTabIndex = tab) {
+                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Attributes") })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Buffer") })
+            }
         }
+        val listModifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+        if (hasBufferTab && tab == 1) {
+            LazyColumn(modifier = listModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    BufferSection(
+                        state = browser.buffers[obj.obis] ?: ProfileBufferState(),
+                        enabled = online,
+                        onRead = { selection -> browserViewModel.readBuffer(obj, selection) },
+                    )
+                }
+                item { Text("") } // breathing room above the gesture bar
+            }
+        } else {
+            AttributesTab(obj, connection, browser, browserViewModel, hasBufferTab, listModifier)
+        }
+    }
+}
+
+@Composable
+private fun AttributesTab(
+    obj: CosemObject,
+    connection: MeterConnectionUiState,
+    browser: ObjectBrowserUiState,
+    browserViewModel: ObjectBrowserViewModel,
+    hasBufferTab: Boolean,
+    modifier: Modifier,
+) {
+    val online = connection.isDlmsConnected
+    val (readable, unreadable) = (1..InterfaceClass.attributeCount(obj.classId)).partition { obj.canRead(it) }
+    // Attributes this client can't read stay folded away under one row.
+    var showUnreadable by rememberSaveable(obj.obis.toString()) { mutableStateOf(false) }
+    val accessOf = { attribute: Int -> obj.attributeAccess?.let { AccessMode.label(it[attribute] ?: AccessMode.NONE) } }
+
+    LazyColumn(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Row(
                 modifier = Modifier.padding(vertical = 4.dp),
@@ -102,26 +151,42 @@ fun ObjectDetailScreen(
                 }
             }
         }
-        items((1..InterfaceClass.attributeCount(obj.classId)).toList()) { attribute ->
-            val access = obj.attributeAccess?.let { AccessMode.label(it[attribute] ?: AccessMode.NONE) }
-            when {
-                !obj.canRead(attribute) -> AttributeRow(
-                    attribute, InterfaceClass.attributeName(obj.classId, attribute), access, null,
-                    note = "Not readable by this client", enabled = false,
+        items(readable, key = { it }) { attribute ->
+            if (hasBufferTab && attribute == ObjectBrowserViewModel.BUFFER) {
+                AttributeRow(
+                    attribute, InterfaceClass.attributeName(obj.classId, attribute), accessOf(attribute), null,
+                    note = "Read it in the Buffer tab", enabled = false,
                 ) {}
-                isProfile && attribute == ObjectBrowserViewModel.BUFFER -> AttributeRow(
-                    attribute, InterfaceClass.attributeName(obj.classId, attribute), access, null,
-                    note = "Read it with the buffer reader below", enabled = false,
-                ) {}
-                else -> AttributeRow(
+            } else {
+                AttributeRow(
                     attribute = attribute,
                     name = InterfaceClass.attributeName(obj.classId, attribute),
-                    access = access,
+                    access = accessOf(attribute),
                     state = browser.attribute(obj, attribute),
                     enabled = online,
                     format = { formatValue(obj.classId, attribute, it) },
                     onRead = { browserViewModel.read(obj, attribute) },
                 )
+            }
+        }
+        if (unreadable.isNotEmpty()) {
+            item(key = "unreadable") {
+                TextButton(onClick = { showUnreadable = !showUnreadable }) {
+                    Icon(
+                        if (showUnreadable) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text("  ${unreadable.size} not readable by this client")
+                }
+            }
+            if (showUnreadable) {
+                items(unreadable, key = { it }) { attribute ->
+                    AttributeRow(
+                        attribute, InterfaceClass.attributeName(obj.classId, attribute), accessOf(attribute), null,
+                        note = "Not readable by this client", enabled = false,
+                    ) {}
+                }
             }
         }
         if (obj.classId == InterfaceClass.CLOCK && connection.client == ClientProfile.UTILITY_SETTINGS &&
@@ -134,15 +199,6 @@ fun ObjectDetailScreen(
                     message = browser.clockMessage,
                     enabled = online,
                     onSet = { browserViewModel.setClockToPhoneTime(obj) },
-                )
-            }
-        }
-        if (isProfile && obj.canRead(ObjectBrowserViewModel.BUFFER)) {
-            item {
-                BufferSection(
-                    state = browser.buffers[obj.obis] ?: ProfileBufferState(),
-                    enabled = online,
-                    onRead = { selection -> browserViewModel.readBuffer(obj, selection) },
                 )
             }
         }
@@ -227,8 +283,7 @@ private fun AccessTag(label: String) {
 
 @Composable
 private fun BufferSection(state: ProfileBufferState, enabled: Boolean, onRead: (BufferSelection) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-        Text("Buffer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
         state.entriesInUse?.let {
             Text("$it entries stored in the meter", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
