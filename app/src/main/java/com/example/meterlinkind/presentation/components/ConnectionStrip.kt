@@ -36,7 +36,7 @@ import com.example.meterlinkind.data.protocol.ClientProfile
 import com.example.meterlinkind.data.repository.BleConnectionState
 
 /** Status colours: meaning, not brand, so they stay green/red in both themes. */
-private val OnlineColor = Color(0xFF1E8E5A)
+internal val OnlineColor = Color(0xFF1E8E5A)
 private val OnlineContainer = Color(0xFFD5F3E3)
 
 /**

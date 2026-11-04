@@ -6,6 +6,12 @@ import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.IconButtonDefaults
+import com.example.meterlinkind.presentation.components.OnlineColor
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.activity.compose.BackHandler
@@ -15,6 +21,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.core.tween
+import com.example.meterlinkind.presentation.components.MeterCardMorph
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.core.MutableTransitionState
 import com.example.meterlinkind.presentation.components.rememberFailureShake
 import com.example.meterlinkind.presentation.components.MeterStatusTitle
@@ -294,173 +308,237 @@ fun HomeContent(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.TopCenter
             ) {
+                // While nothing is connected and the scanner is closed, the card and its buttons
+                // sit in the middle of the screen; scanning or connecting moves them to the top.
+                // The gap above the card is measured from the real sizes and animated.
+                var areaHeight by remember { mutableIntStateOf(0) }
+                var cardHeight by remember { mutableIntStateOf(0) }
+                var buttonsHeight by remember { mutableIntStateOf(0) }
+                val centered = uiState.connectionState.let {
+                    it is BleConnectionState.Disconnected || it is BleConnectionState.Error
+                } && !showScanner
+                val density = LocalDensity.current
+                val measured = areaHeight > 0 && cardHeight > 0 && (!centered || buttonsHeight > 0)
+                val targetGap = if (centered && measured) {
+                    with(density) {
+                        val free = areaHeight - 16.dp.toPx() - cardHeight - 16.dp.toPx() - buttonsHeight
+                        // A little above the exact middle, where it looks centred.
+                        (free / 2f * 0.85f).coerceAtLeast(0f)
+                    }
+                } else 0f
+                val topGap = remember { Animatable(0f) }
+                var placed by remember { mutableStateOf(false) }
+                LaunchedEffect(targetGap, measured) {
+                    if (!placed) {
+                        // First layout: put it in place without sliding in from the top.
+                        topGap.snapTo(targetGap)
+                        if (measured) placed = true
+                    } else {
+                        topGap.animateTo(targetGap, tween(450, easing = FastOutSlowInEasing))
+                    }
+                }
                 Column(
                     modifier = Modifier
                         .widthIn(max = 500.dp)
                         .fillMaxHeight()
+                        .onSizeChanged { areaHeight = it.height }
                         .padding(start = 16.dp, top = 16.dp, end = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Meter card: stays at the top while the rest scrolls. It animates between
-                    // states: badge rings/pop/shake (B), sliding title and unfolding details (D).
-                    val failed = uiState.connectionState is BleConnectionState.Error
+                    // Meter card (compact row): stays at the top while the rest scrolls. Badge
+                    // rings/pop/shake (B); status text slides and details unfold (D).
+                    val state = uiState.connectionState
+                    val failed = state is BleConnectionState.Error
                     val shake = rememberFailureShake(failed)
+                    val copied: (String) -> Unit = { text ->
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Copied: $text", duration = SnackbarDuration.Short)
+                        }
+                    }
                     ElevatedCard(
                         modifier = Modifier
+                            .padding(top = with(density) { topGap.value.toDp() })
                             .fillMaxWidth()
+                            .onSizeChanged { cardHeight = it.height }
                             .offset { IntOffset(shake.value.roundToInt(), 0) },
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp)
                     ) {
-                      Box(modifier = Modifier.fillMaxWidth()) {
-                        if (uiState.connectionState is BleConnectionState.Connected) {
-                            TextButton(
-                                onClick = { viewModel.disconnect() },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(top = 8.dp, end = 8.dp),
-                                colors = ButtonDefaults.textButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.error
-                                ),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = "Disconnect",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
-                        }
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            MeterStatusBadge(uiState.connectionState)
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            MeterStatusTitle(
-                                when (uiState.connectionState) {
-                                    is BleConnectionState.Connected -> "Connected"
-                                    is BleConnectionState.Connecting -> "Connecting..."
-                                    is BleConnectionState.Error -> "Connection Failed"
-                                    else -> "Not Connected"
-                                }
-                            )
-                            // Kept while folding away, so the text doesn't vanish mid-animation.
-                            var lastFailure by remember { mutableStateOf("") }
-                            (uiState.connectionState as? BleConnectionState.Error)?.let { lastFailure = it.message }
-                            AnimatedVisibility(
-                                visible = failed,
-                                enter = expandVertically() + fadeIn(),
-                                exit = shrinkVertically() + fadeOut()
-                            ) {
-                                Text(
-                                    text = lastFailure,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.error,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-
-                            AnimatedVisibility(
-                                visible = uiState.selectedDevice != null,
-                                enter = expandVertically() + fadeIn(),
-                                exit = shrinkVertically() + fadeOut()
-                            ) {
-                              val device = uiState.selectedDevice ?: return@AnimatedVisibility
-                              Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                CopyableText(
-                                    text = uiState.selectedDeviceName ?: "Unknown Device",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    onCopied = { text ->
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                message = "Copied: $text",
-                                                duration = SnackbarDuration.Short
-                                            )
+                        // Big and centred while nothing is connected and the scanner is closed,
+                        // the compact row otherwise; the circle travels, the texts crossfade.
+                        val compactness by animateFloatAsState(
+                            if (centered) 0f else 1f,
+                            tween(450, easing = FastOutSlowInEasing),
+                            label = "card compactness"
+                        )
+                        MeterCardMorph(
+                            progress = compactness,
+                            badge = { size -> MeterStatusBadge(state, size = size) },
+                            big = {
+                                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    MeterStatusTitle(
+                                        when (state) {
+                                            is BleConnectionState.Connected -> "Connected"
+                                            is BleConnectionState.Connecting -> "Connecting..."
+                                            is BleConnectionState.Error -> "Connection Failed"
+                                            else -> "Not Connected"
                                         }
+                                    )
+                                    var bigFailure by remember { mutableStateOf("") }
+                                    (state as? BleConnectionState.Error)?.let { bigFailure = it.message }
+                                    if (failed) {
+                                        Text(
+                                            text = bigFailure,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.error,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            modifier = Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+                                    val device = uiState.selectedDevice
+                                    if (device != null) {
+                                        Spacer(Modifier.height(8.dp))
+                                        CopyableText(
+                                            text = uiState.selectedDeviceName ?: "Unknown Device",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            onCopied = copied
+                                        )
+                                        CopyableText(text = device.address, onCopied = copied)
+                                    } else {
+                                        Text(
+                                            text = "Scan to find a meter nearby",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            compact = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                MeterStatusTitle(
+                                    text = when (state) {
+                                        is BleConnectionState.Connected -> "CONNECTED"
+                                        is BleConnectionState.Connecting -> "CONNECTING..."
+                                        is BleConnectionState.Error -> "CONNECTION FAILED"
+                                        else -> "NOT CONNECTED"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = when (state) {
+                                        is BleConnectionState.Connected -> OnlineColor
+                                        is BleConnectionState.Connecting -> MaterialTheme.colorScheme.primary
+                                        is BleConnectionState.Error -> MaterialTheme.colorScheme.error
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
                                     }
                                 )
+                                if (uiState.selectedDevice != null) {
+                                    CopyableText(
+                                        text = uiState.selectedDeviceName ?: "Unknown Device",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.Bold,
+                                        onCopied = copied
+                                    )
+                                } else {
+                                    Text(
+                                        text = "No meter",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
 
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                // Serial Number and MAC Address
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                // Kept while folding away, so the text doesn't vanish mid-animation.
+                                var lastFailure by remember { mutableStateOf("") }
+                                (state as? BleConnectionState.Error)?.let { lastFailure = it.message }
+                                AnimatedVisibility(
+                                    visible = failed,
+                                    enter = expandVertically() + fadeIn(),
+                                    exit = shrinkVertically() + fadeOut()
                                 ) {
-                                    uiState.serialNumber?.let {
-                                        if (it.isNotEmpty()) {
-                                            Row(
-                                                horizontalArrangement = Arrangement.Center,
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text(
-                                                    text = "S/N: ",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                CopyableText(
-                                                    text = uiState.serialNumber!!,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    onCopied = { text ->
-                                                        scope.launch {
-                                                            snackbarHostState.showSnackbar(
-                                                                message = "Copied: $text",
-                                                                duration = SnackbarDuration.Short
-                                                            )
-                                                        }
-                                                    }
-                                                )
-                                                if (uiState.serialNumber ==  "0000000000") {
-                                                    Spacer(Modifier.width(8.dp))
-                                                    IconButton(
-                                                        onClick = { viewModel.fetchSerialNumber() },
-                                                        modifier = Modifier.size(24.dp)
-                                                    ) {
-                                                        Icon(
-                                                            Icons.Default.Refresh,
-                                                            contentDescription = "Refresh Serial Number",
-                                                            modifier = Modifier.size(16.dp),
-                                                            tint = MaterialTheme.colorScheme.primary
-                                                        )
-                                                    }
+                                    Text(
+                                        text = lastFailure,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
+
+                                val device = uiState.selectedDevice
+                                if (device == null) {
+                                    Text(
+                                        text = "Scan to find a meter nearby",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                AnimatedVisibility(
+                                    visible = device != null && !failed,
+                                    enter = expandVertically() + fadeIn(),
+                                    exit = shrinkVertically() + fadeOut()
+                                ) {
+                                    var lastAddress by remember { mutableStateOf("") }
+                                    device?.let { lastAddress = it.address }
+                                    val serial = uiState.serialNumber?.takeIf {
+                                        it.isNotEmpty() && state is BleConnectionState.Connected
+                                    }
+                                    // Serial on its own line, the MAC under it.
+                                    Column {
+                                        if (serial != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "S/N: ",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            CopyableText(
+                                                text = serial,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                onCopied = copied
+                                            )
+                                            if (serial == "0000000000") {
+                                                IconButton(
+                                                    onClick = { viewModel.fetchSerialNumber() },
+                                                    modifier = Modifier.size(20.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Refresh,
+                                                        contentDescription = "Refresh Serial Number",
+                                                        modifier = Modifier.size(14.dp),
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
                                                 }
                                             }
                                         }
+                                        CopyableText(
+                                            text = lastAddress,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            onCopied = copied
+                                        )
                                     }
-                                    CopyableText(
-                                        text = device.address,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        onCopied = { text ->
-                                            scope.launch {
-                                                snackbarHostState.showSnackbar(
-                                                    message = "Copied: $text",
-                                                    duration = SnackbarDuration.Short
-                                                )
-                                            }
-                                        }
-                                    )
                                 }
-                              }
+                            }
+
+                            AnimatedVisibility(
+                                visible = state is BleConnectionState.Connected,
+                                enter = scaleIn() + fadeIn(),
+                                exit = scaleOut() + fadeOut()
+                            ) {
+                                OutlinedIconButton(
+                                    onClick = { viewModel.disconnect() },
+                                    colors = IconButtonDefaults.outlinedIconButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error
+                                    )
+                                ) {
+                                    Icon(Icons.Default.PowerSettingsNew, contentDescription = "Disconnect")
+                                }
                             }
                         }
-                      }
+                            }
+                        )
                     }
 
                     // Below the fixed meter card: scrolls on its own as more object types are added.
@@ -475,7 +553,9 @@ fun HomeContent(
                     when (uiState.connectionState) {
                         is BleConnectionState.Disconnected, is BleConnectionState.Error -> {
                             Column(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onSizeChanged { if (!showScanner) buttonsHeight = it.height },
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 // Show reconnect button if a device was previously selected
@@ -525,8 +605,8 @@ fun HomeContent(
                                 )
                             }
 
-                            // Always two columns; a lone last tile keeps its half width.
-                            OBJECT_ENTRIES.chunked(2).forEachIndexed { row, pair ->
+                            // Always three columns; a short last row keeps the same tile width.
+                            OBJECT_ENTRIES.chunked(3).forEachIndexed { row, pair ->
                                 SlideDownIn(index = row + 1) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -540,7 +620,7 @@ fun HomeContent(
                                                 modifier = Modifier.weight(1f)
                                             )
                                         }
-                                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                        repeat(3 - pair.size) { Spacer(Modifier.weight(1f)) }
                                     }
                                 }
                             }
@@ -613,7 +693,7 @@ fun QuickActionCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(horizontal = 6.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -626,10 +706,11 @@ fun QuickActionCard(
             Spacer(Modifier.height(6.dp))
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Medium,
                 color = contentColor,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                maxLines = 2
             )
 
         }

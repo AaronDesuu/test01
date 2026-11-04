@@ -42,7 +42,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.layout.Layout
 import com.example.meterlinkind.data.repository.BleConnectionState
 
 /**
@@ -51,7 +57,7 @@ import com.example.meterlinkind.data.repository.BleConnectionState
  * failure. Shrinks a little when connected to make room for the details.
  */
 @Composable
-fun MeterStatusBadge(state: BleConnectionState, modifier: Modifier = Modifier) {
+fun MeterStatusBadge(state: BleConnectionState, modifier: Modifier = Modifier, size: Dp = 80.dp) {
     val colors = MaterialTheme.colorScheme
     val background by animateColorAsState(
         when (state) {
@@ -63,13 +69,13 @@ fun MeterStatusBadge(state: BleConnectionState, modifier: Modifier = Modifier) {
         tween(250), label = "badge background"
     )
     val scale by animateFloatAsState(
-        if (state is BleConnectionState.Connected) 0.82f else 1f,
+        if (state is BleConnectionState.Connected && size >= 80.dp) 0.82f else 1f,
         tween(320), label = "badge scale"
     )
 
-    Box(modifier = modifier.size(80.dp).graphicsLayer { scaleX = scale; scaleY = scale }, contentAlignment = Alignment.Center) {
-        if (state is BleConnectionState.Connecting) ConnectingRings(colors.primary)
-        Box(Modifier.size(80.dp).background(background, CircleShape), contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.size(size).graphicsLayer { scaleX = scale; scaleY = scale }, contentAlignment = Alignment.Center) {
+        if (state is BleConnectionState.Connecting) ConnectingRings(colors.primary, size)
+        Box(Modifier.size(size).background(background, CircleShape), contentAlignment = Alignment.Center) {
             AnimatedContent(
                 targetState = state.iconKind(),
                 transitionSpec = {
@@ -91,7 +97,7 @@ fun MeterStatusBadge(state: BleConnectionState, modifier: Modifier = Modifier) {
                         IconKind.IDLE -> Icons.Default.BluetoothDisabled
                     },
                     contentDescription = null,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(size / 2),
                     tint = when (kind) {
                         IconKind.CONNECTED -> colors.onPrimary
                         IconKind.CONNECTING -> colors.primary
@@ -115,7 +121,7 @@ private fun BleConnectionState.iconKind(): IconKind = when (this) {
 
 /** Two rings growing out of the circle and fading, half a cycle apart. */
 @Composable
-private fun ConnectingRings(color: Color) {
+private fun ConnectingRings(color: Color, size: Dp) {
     val transition = rememberInfiniteTransition(label = "connecting rings")
     repeat(2) { i ->
         val progress by transition.animateFloat(
@@ -130,10 +136,12 @@ private fun ConnectingRings(color: Color) {
         )
         Box(
             Modifier
-                .size(80.dp)
+                .size(size)
                 .graphicsLayer {
-                    scaleX = 1f + 0.75f * progress
-                    scaleY = 1f + 0.75f * progress
+                    // Small badges sit near the card edge, so their rings grow less.
+                    val growth = if (size >= 80.dp) 0.75f else 0.45f
+                    scaleX = 1f + growth * progress
+                    scaleY = 1f + growth * progress
                     alpha = 0.55f * (1f - progress)
                 }
                 .border(2.dp, color, CircleShape)
@@ -146,7 +154,11 @@ private fun ConnectingRings(color: Color) {
  * new one slides in from below.
  */
 @Composable
-fun MeterStatusTitle(text: String) {
+fun MeterStatusTitle(
+    text: String,
+    style: TextStyle = MaterialTheme.typography.headlineSmall,
+    color: Color = Color.Unspecified,
+) {
     AnimatedContent(
         targetState = text,
         transitionSpec = {
@@ -155,7 +167,7 @@ fun MeterStatusTitle(text: String) {
         },
         label = "status title"
     ) { title ->
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(title, style = style, color = color, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -179,3 +191,62 @@ fun rememberFailureShake(failed: Boolean): Animatable<Float, *> {
     }
     return offset
 }
+
+/**
+ * The meter card's two layouts in one: at [progress] 0 the big centred card (circle
+ * on top, [big] text under it), at 1 the compact row (small circle on the left,
+ * [compact] beside it). In between the circle shrinks and travels, the card's
+ * height follows, and the two texts crossfade (one fades out before the other
+ * fades in). [badge] gets the circle size to draw.
+ */
+@Composable
+fun MeterCardMorph(
+    progress: Float,
+    badge: @Composable (Dp) -> Unit,
+    big: @Composable () -> Unit,
+    compact: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val badgeSize = BIG_BADGE + (SMALL_BADGE - BIG_BADGE) * progress
+    val bigAlpha = (1f - progress * 2f).coerceIn(0f, 1f)
+    val compactAlpha = (progress * 2f - 1f).coerceIn(0f, 1f)
+    Layout(
+        content = {
+            Box { badge(badgeSize) }
+            Box(Modifier.graphicsLayer { alpha = bigAlpha }) { big() }
+            Box(Modifier.graphicsLayer { alpha = compactAlpha }) { compact() }
+        },
+        modifier = modifier.fillMaxWidth()
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val bigPad = 24.dp.roundToPx()
+        val pad = 16.dp.roundToPx()
+        val gap = 14.dp.roundToPx()
+        val bigBadge = BIG_BADGE.roundToPx()
+        val smallBadge = SMALL_BADGE.roundToPx()
+
+        val circle = measurables[0].measure(Constraints())
+        val bigText = measurables[1].measure(Constraints.fixedWidth((width - 2 * bigPad).coerceAtLeast(0)))
+        val compactText = measurables[2].measure(
+            Constraints.fixedWidth((width - 2 * pad - smallBadge - gap).coerceAtLeast(0))
+        )
+
+        val bigHeight = bigPad + bigBadge + 16.dp.roundToPx() + bigText.height + bigPad
+        val compactHeight = 2 * pad + maxOf(smallBadge, compactText.height)
+        val height = lerp(bigHeight, compactHeight, progress)
+
+        layout(width, height) {
+            val x = lerp((width - circle.width) / 2, pad, progress)
+            val y = lerp(bigPad, (compactHeight - circle.height) / 2, progress)
+            circle.place(x, y)
+            // A hidden layout isn't placed, so its buttons can't be tapped.
+            if (bigAlpha > 0f) bigText.place(bigPad, y + circle.height + 16.dp.roundToPx())
+            if (compactAlpha > 0f) compactText.place(pad + smallBadge + gap, (compactHeight - compactText.height) / 2)
+        }
+    }
+}
+
+private val BIG_BADGE = 80.dp
+private val SMALL_BADGE = 52.dp
+
+private fun lerp(start: Int, stop: Int, fraction: Float): Int = (start + (stop - start) * fraction).roundToInt()
