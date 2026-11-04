@@ -5,12 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.example.meterlinkind.data.protocol.CaptureObject
 import com.example.meterlinkind.data.protocol.ClientProfile
 import com.example.meterlinkind.data.protocol.ClockValue
+import com.example.meterlinkind.data.protocol.CosemAttribute
 import com.example.meterlinkind.data.protocol.CosemObject
 import com.example.meterlinkind.data.protocol.CosemStructures
 import com.example.meterlinkind.data.protocol.DlmsData
 import com.example.meterlinkind.data.protocol.InterfaceClass
 import com.example.meterlinkind.data.protocol.ObisCode
 import com.example.meterlinkind.data.protocol.ObjectRegistry
+import com.example.meterlinkind.data.protocol.ScalerUnit
 import com.example.meterlinkind.data.protocol.SelectiveAccess
 import com.example.meterlinkind.data.repository.AttributeRead
 import com.example.meterlinkind.data.repository.BleConnectionState
@@ -80,6 +82,8 @@ data class ObjectBrowserUiState(
     /** Keyed by [key]. */
     val attributes: Map<String, AttributeState> = emptyMap(),
     val buffers: Map<ObisCode, ProfileBufferState> = emptyMap(),
+    /** scaler_unit of Registers read so far; kept across reconnects to the same meter. */
+    val scalers: Map<ObisCode, ScalerUnit> = emptyMap(),
     val clockMessage: String? = null,
 ) {
     fun attribute(obj: CosemObject, attribute: Int): AttributeState = attributes[key(obj, attribute)] ?: AttributeState()
@@ -110,6 +114,7 @@ class ObjectBrowserViewModel @Inject constructor(
             bleRepository.connectionState.collect { state ->
                 if (state is BleConnectionState.Disconnected || state is BleConnectionState.Error) {
                     // Values belong to the session; the stored object list stays.
+                    // scalers stay: they don't change while the meter is away.
                     _uiState.update { it.copy(attributes = emptyMap(), buffers = emptyMap(), clockMessage = null) }
                 }
             }
@@ -175,12 +180,13 @@ class ObjectBrowserViewModel @Inject constructor(
             for (attribute in 1..InterfaceClass.attributeCount(obj.classId)) {
                 if (obj.classId == InterfaceClass.PROFILE_GENERIC && attribute == BUFFER) continue
                 if (!obj.canRead(attribute)) continue
-                readNow(obj, attribute)
+                readNow(obj, attribute, withScaler = false)
             }
         }
     }
 
-    private suspend fun readNow(obj: CosemObject, attribute: Int): DlmsData? {
+    /** [withScaler]: after a Register value, also read its scaler_unit if unknown (Read all reads it anyway). */
+    private suspend fun readNow(obj: CosemObject, attribute: Int, withScaler: Boolean = true): DlmsData? {
         val key = ObjectBrowserUiState.key(obj, attribute)
         setAttribute(key) { it.copy(loading = true, error = null, progress = null) }
         val result = dlmsRepository.read(obj.attribute(attribute)) { p -> setAttribute(key) { it.copy(progress = p) } }
@@ -190,7 +196,32 @@ class ObjectBrowserViewModel @Inject constructor(
                 is AttributeRead.Failure -> it.copy(loading = false, progress = null, error = result.message)
             }
         }
-        return (result as? AttributeRead.Value)?.data
+        val data = (result as? AttributeRead.Value)?.data
+        if (data != null && InterfaceClass.hasScaler(obj.classId)) {
+            if (attribute == SCALER_UNIT) {
+                ScalerUnit.parse(data)?.let { su -> _uiState.update { it.copy(scalers = it.scalers + (obj.obis to su)) } }
+            } else if (withScaler && attribute == VALUE && obj.obis !in _uiState.value.scalers && obj.canRead(SCALER_UNIT)) {
+                readNow(obj, SCALER_UNIT) // a value means little without its unit
+            }
+        }
+        return data
+    }
+
+    /**
+     * Reads scaler_unit of each Register column of a profile that isn't known
+     * yet, so the table can show units and scaled values.
+     */
+    private suspend fun readColumnScalers(obj: CosemObject, columns: List<CaptureObject>) {
+        val missing = columns.filter {
+            InterfaceClass.hasScaler(it.classId) && it.attribute == VALUE && it.obis !in _uiState.value.scalers &&
+                find(it.obis.toString())?.canRead(SCALER_UNIT) != false
+        }.distinctBy { it.obis }
+        missing.forEachIndexed { i, column ->
+            setBuffer(obj) { it.copy(progress = "Reading units ${i + 1}/${missing.size}...") }
+            val target = CosemAttribute(column.classId, column.obis, SCALER_UNIT, "${column.label}.scaler_unit")
+            val su = (dlmsRepository.read(target) as? AttributeRead.Value)?.data?.let(ScalerUnit::parse) ?: return@forEachIndexed
+            _uiState.update { it.copy(scalers = it.scalers + (column.obis to su)) }
+        }
     }
 
     /**
@@ -205,6 +236,7 @@ class ObjectBrowserViewModel @Inject constructor(
             val columns = _uiState.value.buffers[obj.obis]?.columns
                 ?: readNow(obj, CAPTURE_OBJECTS)?.let { runCatching { CosemStructures.captureObjects(it) }.getOrNull() }
             val entries = (readNow(obj, ENTRIES_IN_USE) as? DlmsData.Integer)?.value
+            columns?.let { readColumnScalers(obj, it) }
 
             val access = when (selection) {
                 BufferSelection.All -> null
@@ -268,6 +300,8 @@ class ObjectBrowserViewModel @Inject constructor(
         _uiState.update { it.copy(buffers = it.buffers + (obj.obis to change(it.buffers[obj.obis] ?: ProfileBufferState()))) }
 
     companion object {
+        const val VALUE = 2
+        const val SCALER_UNIT = 3
         const val BUFFER = 2
         const val CAPTURE_OBJECTS = 3
         const val ENTRIES_IN_USE = 7

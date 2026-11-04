@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.TableChart
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -143,12 +144,18 @@ fun MeterConnectionScreen(
 
 /** Drawer routes that browse one interface class. */
 private val BROWSER_CLASSES = mapOf(
+    "data" to InterfaceClass.DATA,
+    "register" to InterfaceClass.REGISTER,
+    "extregister" to InterfaceClass.EXTENDED_REGISTER,
     "profile" to InterfaceClass.PROFILE_GENERIC,
     "clock" to InterfaceClass.CLOCK,
 )
 
 private fun getScreenTitle(screen: String): String = when (screen) {
     "home" -> "Meter Link"
+    "data" -> "Data"
+    "register" -> "Register"
+    "extregister" -> "Extended Register"
     "profile" -> "Profile Generic"
     "clock" -> "Clock"
     "settings" -> "Settings"
@@ -404,6 +411,12 @@ fun HomeContent(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
+                                QuickActionCard(
+                                    title = "Registers",
+                                    icon = Icons.Default.Speed,
+                                    onClick = { onNavigate("register") },
+                                    modifier = Modifier.weight(1f)
+                                )
                                 QuickActionCard(
                                     title = "Profiles",
                                     icon = Icons.Default.TableChart,

@@ -10,10 +10,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.AvTimer
+import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -36,6 +39,9 @@ private data class DrawerEntry(val route: String, val label: String, val icon: I
 
 private val METER_ENTRIES = listOf(
     DrawerEntry("home", "Home", Icons.Default.Home),
+    DrawerEntry("data", "Data", Icons.Default.DataObject),
+    DrawerEntry("register", "Register", Icons.Default.Speed),
+    DrawerEntry("extregister", "Extended Register", Icons.Default.AvTimer),
     DrawerEntry("profile", "Profile Generic", Icons.Default.TableChart),
     DrawerEntry("clock", "Clock", Icons.Default.Schedule),
 )

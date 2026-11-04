@@ -26,12 +26,16 @@ data class CosemObject(
 /** Attribute names of the interface classes the app browses (IEC 62056-6-2). */
 object InterfaceClass {
     const val DATA = 1
+    const val REGISTER = 3
+    const val EXTENDED_REGISTER = 4
     const val PROFILE_GENERIC = 7
     const val CLOCK = 8
     const val ASSOCIATION_LN = 15
 
     private val ATTRIBUTES = mapOf(
         DATA to listOf("logical_name", "value"),
+        REGISTER to listOf("logical_name", "value", "scaler_unit"),
+        EXTENDED_REGISTER to listOf("logical_name", "value", "scaler_unit", "status", "capture_time"),
         PROFILE_GENERIC to listOf(
             "logical_name", "buffer", "capture_objects", "capture_period",
             "sort_method", "sort_object", "entries_in_use", "profile_entries",
@@ -44,13 +48,16 @@ object InterfaceClass {
 
     fun name(classId: Int): String = when (classId) {
         DATA -> "Data"
-        3 -> "Register"
-        4 -> "Extended Register"
+        REGISTER -> "Register"
+        EXTENDED_REGISTER -> "Extended Register"
         PROFILE_GENERIC -> "Profile Generic"
         CLOCK -> "Clock"
         ASSOCIATION_LN -> "Association LN"
         else -> "Class $classId"
     }
+
+    /** Register-like classes: value in attribute 2, scaler_unit in attribute 3. */
+    fun hasScaler(classId: Int): Boolean = classId == REGISTER || classId == EXTENDED_REGISTER
 
     fun attributeCount(classId: Int): Int = ATTRIBUTES[classId]?.size ?: 1
 
@@ -73,6 +80,54 @@ object AccessMode {
         canWrite(mode) -> "W"
         else -> "none"
     }
+}
+
+/**
+ * scaler_unit of a Register: the value means raw × 10^[scaler] [unit]
+ * (IEC 62056-6-2 §4.3.2).
+ */
+data class ScalerUnit(val scaler: Int, val unit: Int) {
+    val symbol: String get() = Units.symbol(unit)
+
+    /** [value] scaled, without the unit; null if it isn't a number. */
+    fun scale(value: DlmsData): String? {
+        val raw = when (value) {
+            // Through the displayed text, so a float32 doesn't bring double noise along.
+            is DlmsData.Integer, is DlmsData.Float -> value.display().toBigDecimalOrNull()
+            else -> null
+        } ?: return null
+        return if (scaler == 0) raw.toPlainString() else raw.scaleByPowerOfTen(scaler).stripTrailingZeros().toPlainString()
+    }
+
+    /** "239.73 V"; the raw display if it isn't a number. */
+    fun format(value: DlmsData): String = scale(value)?.let { if (symbol.isEmpty()) it else "$it $symbol" } ?: value.display()
+
+    override fun toString(): String = "×10^$scaler" + if (symbol.isEmpty()) "" else " $symbol"
+
+    companion object {
+        /** Attribute 3 of a Register: structure {scaler integer, unit enum}. */
+        fun parse(data: DlmsData): ScalerUnit? {
+            val items = (data as? DlmsData.Structure)?.items ?: return null
+            val scaler = (items.getOrNull(0) as? DlmsData.Integer)?.value?.toInt() ?: return null
+            val unit = (items.getOrNull(1) as? DlmsData.Enum)?.value ?: return null
+            return ScalerUnit(scaler, unit)
+        }
+    }
+}
+
+/** Unit enumeration of scaler_unit (IEC 62056-6-2 Table 4), the ones an electricity meter uses. */
+object Units {
+    private val SYMBOLS = mapOf(
+        1 to "a", 2 to "mo", 3 to "wk", 4 to "d", 5 to "h", 6 to "min", 7 to "s", 8 to "°", 9 to "°C",
+        10 to "currency", 27 to "W", 28 to "VA", 29 to "var", 30 to "Wh", 31 to "VAh", 32 to "varh",
+        33 to "A", 34 to "C", 35 to "V", 36 to "V/m", 37 to "F", 38 to "Ω", 44 to "Hz",
+        45 to "1/(Wh)", 46 to "1/(varh)", 47 to "1/(VAh)", 48 to "V²h", 49 to "A²h", 56 to "%", 57 to "Ah",
+        60 to "Wh/m³", 61 to "J/m³", 62 to "Mol %", 63 to "g/m³", 64 to "Pa s", 65 to "J/kg",
+        254 to "", 255 to "",
+    )
+
+    /** Empty for "other unit" (254) and "count" (255). */
+    fun symbol(unit: Int): String = SYMBOLS[unit] ?: "unit $unit"
 }
 
 // ---------------------------------------------------------------------------

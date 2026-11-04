@@ -58,6 +58,22 @@ class ObjectsTest {
     }
 
     @Test
+    fun scalerUnitScalesValues() {
+        // Register scaler_unit {-2, V}: raw 23973 means 239.73 V.
+        val volts = ScalerUnit.parse(Axdr.decode(hex("02 02 0F FE 16 23")))!!
+        assertEquals(ScalerUnit(-2, 35), volts)
+        assertEquals("239.73 V", volts.format(Axdr.decode(hex("12 5DA5"))))
+        // {3, Wh} on a float32: 1.5 → 1500 Wh.
+        val kwh = ScalerUnit(3, 30)
+        assertEquals("1500", kwh.scale(Axdr.decode(hex("17 3FC00000"))))
+        // A count has no symbol.
+        assertEquals("78", ScalerUnit(0, 255).format(DlmsData.Integer(Axdr.TAG_UINT16, 78)))
+        // Not a number: shown as is.
+        assertEquals("abc", volts.format(DlmsData.VisibleString("abc")))
+        assertEquals("×10^-2 V", volts.toString())
+    }
+
+    @Test
     fun float32DisplaysAtSinglePrecision() {
         // 239.73 as the meter's block voltage column sends it
         assertEquals("239.73", Axdr.decode(hex("17 436FBAE1")).display())

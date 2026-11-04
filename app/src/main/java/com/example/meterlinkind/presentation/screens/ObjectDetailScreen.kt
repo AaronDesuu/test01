@@ -52,6 +52,7 @@ import com.example.meterlinkind.data.protocol.CosemStructures
 import com.example.meterlinkind.data.protocol.DlmsData
 import com.example.meterlinkind.data.protocol.InterfaceClass
 import com.example.meterlinkind.data.protocol.ObisCode
+import com.example.meterlinkind.data.protocol.ScalerUnit
 import com.example.meterlinkind.presentation.components.ConnectionStrip
 import com.example.meterlinkind.presentation.viewmodel.AttributeState
 import com.example.meterlinkind.presentation.viewmodel.BufferSelection
@@ -104,6 +105,7 @@ fun ObjectDetailScreen(
                 item {
                     BufferSection(
                         state = browser.buffers[obj.obis] ?: ProfileBufferState(),
+                        scalers = browser.scalers,
                         enabled = online,
                         onRead = { selection -> browserViewModel.readBuffer(obj, selection) },
                     )
@@ -164,7 +166,7 @@ private fun AttributesTab(
                     access = accessOf(attribute),
                     state = browser.attribute(obj, attribute),
                     enabled = online,
-                    format = { formatValue(obj.classId, attribute, it) },
+                    format = { formatValue(obj.classId, attribute, it, browser.scalers[obj.obis]) },
                     onRead = { browserViewModel.read(obj, attribute) },
                 )
             }
@@ -282,21 +284,33 @@ private fun AccessTag(label: String) {
 }
 
 @Composable
-private fun BufferSection(state: ProfileBufferState, enabled: Boolean, onRead: (BufferSelection) -> Unit) {
+private fun BufferSection(
+    state: ProfileBufferState,
+    scalers: Map<ObisCode, ScalerUnit>,
+    enabled: Boolean,
+    onRead: (BufferSelection) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
         state.entriesInUse?.let {
             Text("$it entries stored in the meter", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         BufferReadingOptions(enabled = enabled, loading = state.loading, progress = state.progress, onRead = onRead)
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
-        state.rows?.let { rows -> BufferTable(state, rows) }
+        state.rows?.let { rows -> BufferTable(state, rows, scalers) }
     }
 }
 
 @Composable
-private fun BufferTable(state: ProfileBufferState, rows: List<List<DlmsData>>) {
+private fun BufferTable(state: ProfileBufferState, rows: List<List<DlmsData>>, scalers: Map<ObisCode, ScalerUnit>) {
     val width = rows.maxOfOrNull { it.size } ?: 0
-    val headers = List(width) { i -> state.columns?.getOrNull(i)?.label ?: "Column ${i + 1}" }
+    // Register columns get their unit in the header and scaled values in the cells.
+    val columnScalers = List(width) { i ->
+        state.columns?.getOrNull(i)?.takeIf { it.attribute == ObjectBrowserViewModel.VALUE }?.let { scalers[it.obis] }
+    }
+    val headers = List(width) { i ->
+        val label = state.columns?.getOrNull(i)?.label ?: "Column ${i + 1}"
+        columnScalers[i]?.symbol?.takeIf { it.isNotEmpty() }?.let { "$label ($it)" } ?: label
+    }
     val cell = Modifier.width(150.dp).padding(horizontal = 8.dp, vertical = 6.dp)
     Text("${rows.size} rows", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     SelectionContainer {
@@ -312,8 +326,8 @@ private fun BufferTable(state: ProfileBufferState, rows: List<List<DlmsData>>) {
             }
             rows.forEach { row ->
                 Row {
-                    row.forEach {
-                        Text(it.display(), modifier = cell, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    row.forEachIndexed { i, value ->
+                        Text(columnScalers.getOrNull(i)?.scale(value) ?: value.display(), modifier = cell, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
                     }
                 }
             }
@@ -352,9 +366,15 @@ private fun SetClockCard(meter: String, clockName: String, message: String?, ena
     }
 }
 
-/** Attribute values the way Gurux shows them: OBIS for logical names, columns for capture objects. */
-private fun formatValue(classId: Int, attribute: Int, data: DlmsData): String = when {
+/**
+ * Attribute values the way Gurux shows them: OBIS for logical names, columns
+ * for capture objects, Register values scaled with their unit.
+ */
+private fun formatValue(classId: Int, attribute: Int, data: DlmsData, scaler: ScalerUnit?): String = when {
     attribute == 1 && data is DlmsData.OctetString && data.bytes.size == 6 -> ObisCode.of(data.bytes).toString()
+    InterfaceClass.hasScaler(classId) && attribute == ObjectBrowserViewModel.VALUE && scaler != null -> scaler.format(data)
+    InterfaceClass.hasScaler(classId) && attribute == ObjectBrowserViewModel.SCALER_UNIT ->
+        ScalerUnit.parse(data)?.let { "$it  (scaler ${it.scaler}, unit ${it.unit})" } ?: data.display()
     classId == InterfaceClass.PROFILE_GENERIC && attribute == ObjectBrowserViewModel.CAPTURE_OBJECTS ->
         runCatching {
             CosemStructures.captureObjects(data).joinToString("\n") { "${it.label} (${it.obis} a${it.attribute})" }
