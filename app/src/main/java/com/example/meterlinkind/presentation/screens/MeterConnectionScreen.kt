@@ -1,6 +1,8 @@
 package com.example.meterlinkind.presentation.screens
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -78,6 +80,22 @@ fun MeterConnectionScreen(
     val openObject = openObis?.let(browserViewModel::find)
     val navigate = { route: String -> currentScreen = route; openObis = null }
 
+    // Back handlers: the one declared last wins, so they go from least to most specific.
+    // Home: a second Back within 2 s leaves the app.
+    val context = LocalContext.current
+    var lastBackOnHome by remember { mutableLongStateOf(0L) }
+    BackHandler(enabled = currentScreen == "home") {
+        val now = System.currentTimeMillis()
+        if (now - lastBackOnHome < EXIT_CONFIRM_MS) {
+            (context as? Activity)?.finish()
+        } else {
+            lastBackOnHome = now
+            Toast.makeText(context, "Press back again to exit", Toast.LENGTH_SHORT).show()
+        }
+    }
+    // Any other screen goes back to Home.
+    BackHandler(enabled = currentScreen != "home") { navigate("home") }
+
     BackHandler(enabled = openObject != null) { openObis = null }
 
     // Sub-pages of Settings go back to Settings; Security Keys right after login goes on to Home.
@@ -87,6 +105,7 @@ fun MeterConnectionScreen(
     var showScanner by rememberSaveable { mutableStateOf(false) }
     // Declared last, so Back closes the scanner before anything else.
     BackHandler(enabled = showScanner) { showScanner = false }
+    BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
     // From any screen: reconnect to the last meter, or scan for one.
     val connect = {
         val device = connection.selectedDevice
@@ -194,6 +213,9 @@ private val BROWSER_CLASSES = mapOf(
     "limiter" to InterfaceClass.LIMITER,
     "clock" to InterfaceClass.CLOCK,
 )
+
+/** Window for the second Back on Home that leaves the app. */
+private const val EXIT_CONFIRM_MS = 2000L
 
 /** Pages reached from Settings, and where Back takes them. */
 private val SUB_PAGES = mapOf("saved" to "settings", "keys" to "settings")
