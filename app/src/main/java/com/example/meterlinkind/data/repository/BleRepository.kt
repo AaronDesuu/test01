@@ -10,6 +10,8 @@ import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.channels.Channel
@@ -65,6 +67,11 @@ class BleRepository(private val context: Context) {
         private const val MAX_CHAR_LEN = 250
         private const val WRITE_CALLBACK_TIMEOUT_MS = 2000L
         private const val FLOW_RESUME_TIMEOUT_MS = 5000L
+        /**
+         * From connectGatt until the link is ready (services, notifications,
+         * FLOW_ON, MTU). Android's own limit is about 30 s, too long in the field.
+         */
+        const val CONNECT_TIMEOUT_MS = 15_000L
         /**
          * Right after the MTU exchange the module renegotiates the connection
          * interval. A write that landed in that window (15 ms after connect) was
@@ -253,6 +260,7 @@ class BleRepository(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun connectToDevice(device: BluetoothDevice) {
+        mainHandler.removeCallbacks(connectTimeout) // a previous attempt's timer must not end this one
         _connectionState.value = BleConnectionState.Connecting
         // Clear old data channel and create a fresh one for new connection
         _dataChannel.close()
@@ -267,6 +275,27 @@ class BleRepository(private val context: Context) {
         // Stash the gatt immediately so an early disconnect() can clean it up
         // even if STATE_CONNECTED hasn't arrived yet.
         bluetoothGatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        mainHandler.postDelayed(connectTimeout, CONNECT_TIMEOUT_MS)
+    }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * Gives up on a connection still not ready after [CONNECT_TIMEOUT_MS]. The
+     * GATT is closed outright: without a link, disconnect() may never call back.
+     */
+    @SuppressLint("MissingPermission")
+    private val connectTimeout = Runnable {
+        if (_connectionState.value !is BleConnectionState.Connecting) return@Runnable
+        Log.w(TAG, "No connection after ${CONNECT_TIMEOUT_MS / 1000} s, giving up")
+        bluetoothGatt?.let {
+            it.disconnect()
+            it.close()
+        }
+        bluetoothGatt = null
+        _connectionState.value = BleConnectionState.Error(
+            "Couldn't connect within ${CONNECT_TIMEOUT_MS / 1000} s. Move closer to the meter and try again."
+        )
     }
 
     /**

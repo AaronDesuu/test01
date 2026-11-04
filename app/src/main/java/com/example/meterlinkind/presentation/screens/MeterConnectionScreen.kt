@@ -1,6 +1,7 @@
 package com.example.meterlinkind.presentation.screens
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
 import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
@@ -12,6 +13,20 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.MutableTransitionState
+import com.example.meterlinkind.presentation.components.rememberFailureShake
+import com.example.meterlinkind.presentation.components.MeterStatusTitle
+import com.example.meterlinkind.presentation.components.MeterStatusBadge
+import com.example.meterlinkind.presentation.components.MeterStatusPill
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.background
@@ -23,9 +38,6 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.TableChart
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -45,6 +57,7 @@ import kotlinx.coroutines.launch
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.meterlinkind.data.repository.BleConnectionState
 import com.example.meterlinkind.presentation.components.AppDrawer
+import com.example.meterlinkind.presentation.components.OBJECT_ENTRIES
 import com.example.meterlinkind.presentation.viewmodel.MeterConnectionViewModel
 import com.example.meterlinkind.presentation.viewmodel.ObjectBrowserViewModel
 import com.example.meterlinkind.data.protocol.InterfaceClass
@@ -109,7 +122,13 @@ fun MeterConnectionScreen(
     // From any screen: reconnect to the last meter, or scan for one.
     val connect = {
         val device = connection.selectedDevice
-        if (device != null) viewModel.connectToDevice(device) else showScanner = true
+        if (device != null) {
+            viewModel.connectToDevice(device)
+        } else {
+            // The scanner opens under the meter card on the Meter screen.
+            navigate("home")
+            showScanner = true
+        }
     }
 
     // The object list belongs to a meter (serial) and client; load the stored one when either changes.
@@ -132,8 +151,27 @@ fun MeterConnectionScreen(
     ) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text(openObject?.name ?: getScreenTitle(currentScreen), maxLines = 1) },
+                CenterAlignedTopAppBar(
+                    title = {
+                        // The Meter screen is titled with the meter it's connected to.
+                        val meterName = connection.selectedDeviceName.takeIf { connection.isDlmsConnected }
+                        Text(openObject?.name ?: meterName.takeIf { currentScreen == "home" } ?: getScreenTitle(currentScreen), maxLines = 1)
+                    },
+                    actions = {
+                        // Object screens show the meter as a pill here instead of a card under the bar.
+                        if (currentScreen in BROWSER_CLASSES) {
+                            val online = connection.connectionState is BleConnectionState.Connected
+                            MeterStatusPill(
+                                deviceName = connection.selectedDeviceName,
+                                connectionState = connection.connectionState,
+                                associated = connection.isDlmsConnected,
+                                onClick = {
+                                    val connecting = connection.connectionState is BleConnectionState.Connecting
+                                    if (online || connecting) navigate("home") else connect()
+                                }
+                            )
+                        }
+                    },
                     navigationIcon = {
                         if (openObject != null) {
                             IconButton(onClick = { openObis = null }) {
@@ -154,18 +192,10 @@ fun MeterConnectionScreen(
         ) { padding ->
             val browsedClass = BROWSER_CLASSES[currentScreen]
             when {
-                showScanner -> BleScannerScreen(
-                    onDeviceSelected = { device, name ->
-                        viewModel.connectToDevice(device, name)
-                        showScanner = false
-                    },
-                    onClose = { showScanner = false }
-                )
                 browsedClass != null && openObject != null -> ObjectDetailScreen(
                     obj = openObject,
                     connectionViewModel = viewModel,
                     browserViewModel = browserViewModel,
-                    onConnect = connect,
                     modifier = Modifier.padding(padding)
                 )
                 browsedClass != null -> ObjectListScreen(
@@ -173,7 +203,6 @@ fun MeterConnectionScreen(
                     connectionViewModel = viewModel,
                     browserViewModel = browserViewModel,
                     onOpen = { openObis = it.obis.toString() },
-                    onConnect = connect,
                     modifier = Modifier.padding(padding)
                 )
                 currentScreen == "keys" -> SecurityKeysScreen(
@@ -195,7 +224,13 @@ fun MeterConnectionScreen(
                 else -> HomeContent(
                     viewModel = viewModel,
                     onNavigate = navigate,
+                    showScanner = showScanner,
                     onScan = { showScanner = true },
+                    onCloseScanner = { showScanner = false },
+                    onDeviceSelected = { device, name ->
+                        viewModel.connectToDevice(device, name)
+                        showScanner = false
+                    },
                     modifier = Modifier.padding(padding)
                 )
             }
@@ -221,7 +256,7 @@ private const val EXIT_CONFIRM_MS = 2000L
 private val SUB_PAGES = mapOf("saved" to "settings", "keys" to "settings")
 
 private fun getScreenTitle(screen: String): String = when (screen) {
-    "home" -> "Meter Link"
+    "home" -> "Meter"
     "data" -> "Data"
     "register" -> "Register"
     "extregister" -> "Extended Register"
@@ -242,7 +277,10 @@ fun HomeContent(
     modifier: Modifier = Modifier,
     viewModel: MeterConnectionViewModel,
     onNavigate: (String) -> Unit = {},
+    showScanner: Boolean = false,
     onScan: () -> Unit = {},
+    onCloseScanner: () -> Unit = {},
+    onDeviceSelected: (BluetoothDevice, String?) -> Unit = { _, _ -> },
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -254,18 +292,23 @@ fun HomeContent(
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.TopCenter
             ) {
                 Column(
                     modifier = Modifier
                         .widthIn(max = 500.dp)
-                        .padding(16.dp)
-                        .verticalScroll(rememberScrollState()),
+                        .fillMaxHeight()
+                        .padding(start = 16.dp, top = 16.dp, end = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Hero Status Card
+                    // Meter card: stays at the top while the rest scrolls. It animates between
+                    // states: badge rings/pop/shake (B), sliding title and unfolding details (D).
+                    val failed = uiState.connectionState is BleConnectionState.Error
+                    val shake = rememberFailureShake(failed)
                     ElevatedCard(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .offset { IntOffset(shake.value.roundToInt(), 0) },
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp)
                     ) {
                       Box(modifier = Modifier.fillMaxWidth()) {
@@ -298,49 +341,42 @@ fun HomeContent(
                                 .padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            // Status Icon
-                            Box(
-                                modifier = Modifier
-                                    .size(80.dp)
-                                    .background(
-                                        color = when (uiState.connectionState) {
-                                            is BleConnectionState.Connected -> MaterialTheme.colorScheme.primaryContainer
-                                            is BleConnectionState.Connecting -> MaterialTheme.colorScheme.secondaryContainer
-                                            else -> MaterialTheme.colorScheme.surfaceVariant
-                                        },
-                                        shape = CircleShape
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = when (uiState.connectionState) {
-                                        is BleConnectionState.Connected -> Icons.Default.CheckCircle
-                                        is BleConnectionState.Connecting -> Icons.AutoMirrored.Filled.BluetoothSearching
-                                        else -> Icons.Default.BluetoothDisabled
-                                    },
-                                    contentDescription = null,
-                                    modifier = Modifier.size(40.dp),
-                                    tint = when (uiState.connectionState) {
-                                        is BleConnectionState.Connected -> MaterialTheme.colorScheme.primary
-                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
+                            MeterStatusBadge(uiState.connectionState)
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            Text(
-                                text = when (uiState.connectionState) {
+                            MeterStatusTitle(
+                                when (uiState.connectionState) {
                                     is BleConnectionState.Connected -> "Connected"
                                     is BleConnectionState.Connecting -> "Connecting..."
                                     is BleConnectionState.Error -> "Connection Failed"
                                     else -> "Not Connected"
-                                },
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold
+                                }
                             )
+                            // Kept while folding away, so the text doesn't vanish mid-animation.
+                            var lastFailure by remember { mutableStateOf("") }
+                            (uiState.connectionState as? BleConnectionState.Error)?.let { lastFailure = it.message }
+                            AnimatedVisibility(
+                                visible = failed,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                                Text(
+                                    text = lastFailure,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
 
-                            uiState.selectedDevice?.let { device ->
+                            AnimatedVisibility(
+                                visible = uiState.selectedDevice != null,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                              val device = uiState.selectedDevice ?: return@AnimatedVisibility
+                              Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 CopyableText(
                                     text = uiState.selectedDeviceName ?: "Unknown Device",
@@ -421,11 +457,21 @@ fun HomeContent(
                                         }
                                     )
                                 }
+                              }
                             }
                         }
                       }
                     }
 
+                    // Below the fixed meter card: scrolls on its own as more object types are added.
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                     when (uiState.connectionState) {
                         is BleConnectionState.Disconnected, is BleConnectionState.Error -> {
                             Column(
@@ -446,53 +492,57 @@ fun HomeContent(
                                     }
                                 }
 
-                                Button(
-                                    onClick = onScan,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(56.dp),
-                                    colors = if (uiState.selectedDevice != null) {
-                                        ButtonDefaults.outlinedButtonColors()
-                                    } else {
-                                        ButtonDefaults.buttonColors()
+                                if (showScanner) {
+                                    BleScannerPanel(onDeviceSelected = onDeviceSelected, onClose = onCloseScanner)
+                                } else {
+                                    Button(
+                                        onClick = onScan,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(56.dp),
+                                        colors = if (uiState.selectedDevice != null) {
+                                            ButtonDefaults.outlinedButtonColors()
+                                        } else {
+                                            ButtonDefaults.buttonColors()
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Bluetooth, contentDescription = null)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Scan for Meters")
                                     }
-                                ) {
-                                    Icon(Icons.Default.Bluetooth, contentDescription = null)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Scan for Meters")
                                 }
                             }
                         }
 
                         is BleConnectionState.Connected -> {
-                            Text(
-                                text = "Browse the meter",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            // Heading and tile rows slide down into view one after another; the
+                            // scrolling area clips above its top, so they come out from under the card.
+                            SlideDownIn(index = 0) {
+                                Text(
+                                    text = "Browse the meter",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                QuickActionCard(
-                                    title = "Registers",
-                                    icon = Icons.Default.Speed,
-                                    onClick = { onNavigate("register") },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                QuickActionCard(
-                                    title = "Profiles",
-                                    icon = Icons.Default.TableChart,
-                                    onClick = { onNavigate("profile") },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                QuickActionCard(
-                                    title = "Clock",
-                                    icon = Icons.Default.Schedule,
-                                    onClick = { onNavigate("clock") },
-                                    modifier = Modifier.weight(1f)
-                                )
+                            // Always two columns; a lone last tile keeps its half width.
+                            OBJECT_ENTRIES.chunked(2).forEachIndexed { row, pair ->
+                                SlideDownIn(index = row + 1) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        pair.forEach { entry ->
+                                            QuickActionCard(
+                                                title = entry.label,
+                                                icon = entry.icon,
+                                                onClick = { onNavigate(entry.route) },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                    }
+                                }
                             }
                         }
 
@@ -506,6 +556,7 @@ fun HomeContent(
                                 CircularProgressIndicator()
                             }
                         }
+                    }
                     }
                 }
             }
@@ -529,6 +580,20 @@ fun HomeContent(
     }
 }
 
+/**
+ * Shows [content] sliding down and fading in when it first appears, [index]
+ * steps of 60 ms after the first, so a column of rows unrolls top to bottom.
+ */
+@Composable
+private fun SlideDownIn(index: Int, content: @Composable () -> Unit) {
+    val visible = remember { MutableTransitionState(false).apply { targetState = true } }
+    AnimatedVisibility(
+        visibleState = visible,
+        enter = slideInVertically(tween(380, delayMillis = index * 60)) { -it } +
+            fadeIn(tween(380, delayMillis = index * 60)),
+    ) { content() }
+}
+
 @Composable
 fun QuickActionCard(
     title: String,
@@ -540,7 +605,7 @@ fun QuickActionCard(
 ) {
     ElevatedCard(
         onClick = onClick,
-        modifier = modifier.height(120.dp),
+        modifier = modifier.height(104.dp),
         colors = CardDefaults.elevatedCardColors(
             containerColor = containerColor
         )
@@ -555,16 +620,18 @@ fun QuickActionCard(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(28.dp),
                 tint = contentColor
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
-                color = contentColor
+                color = contentColor,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
+
         }
     }
 }

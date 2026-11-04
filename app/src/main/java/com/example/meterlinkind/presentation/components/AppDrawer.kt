@@ -12,7 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AvTimer
 import androidx.compose.material.icons.filled.DataObject
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
@@ -36,18 +36,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.meterlinkind.presentation.viewmodel.MeterConnectionViewModel
 
-private data class DrawerEntry(val route: String, val label: String, val icon: ImageVector)
+data class DrawerEntry(val route: String, val label: String, val icon: ImageVector)
 
-private val METER_ENTRIES = listOf(
-    DrawerEntry("home", "Home", Icons.Default.Home),
+/** The object screens, in menu order; the Meter screen's Browse tiles show the same list. */
+val OBJECT_ENTRIES = listOf(
     DrawerEntry("data", "Data", Icons.Default.DataObject),
-    DrawerEntry("register", "Register", Icons.Default.Speed),
+    DrawerEntry("register", "Register", Icons.Default.Numbers),
     DrawerEntry("extregister", "Extended Register", Icons.Default.AvTimer),
     DrawerEntry("profile", "Profile Generic", Icons.Default.TableChart),
     DrawerEntry("clock", "Clock", Icons.Default.Schedule),
     DrawerEntry("disconnect", "Disconnect Control", Icons.Default.PowerSettingsNew),
     DrawerEntry("limiter", "Limiter", Icons.Default.Tune),
 )
+
+private val METER_ENTRIES = listOf(DrawerEntry("home", "Meter", Icons.Default.Speed)) + OBJECT_ENTRIES
 
 private val ACCOUNT_ENTRIES = listOf(
     DrawerEntry("settings", "Settings", Icons.Default.Settings),

@@ -18,15 +18,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SignalCellularAlt
+import androidx.compose.material.icons.filled.SignalCellularAlt1Bar
+import androidx.compose.material.icons.filled.SignalCellularAlt2Bar
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,10 +35,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -54,12 +54,17 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.meterlinkind.data.repository.BleRepository
 
+/**
+ * Finds meters nearby, shown as a panel under the Meter screen's meter card.
+ * Scanning starts when it appears and stops when it's closed or a device is picked.
+ */
 @SuppressLint("MissingPermission")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BleScannerScreen(
+fun BleScannerPanel(
     onDeviceSelected: (BluetoothDevice, String?) -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     var isScanning by remember { mutableStateOf(false) }
@@ -68,6 +73,8 @@ fun BleScannerScreen(
     // Names by address, from the advertisements. BluetoothDevice.name is Android's
     // cache, which drops unbonded devices once a GATT connection to them closes.
     var deviceNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    // Latest signal strength (dBm) per address, from each advertisement.
+    var rssiByAddress by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var hasPermissions by remember { mutableStateOf(checkPermissions(context)) }
 
@@ -97,6 +104,9 @@ fun BleScannerScreen(
                 val deviceName = result.scanRecord?.deviceName ?: device.name
                 if (deviceName != null && deviceNames[device.address] != deviceName) {
                     deviceNames = deviceNames + (device.address to deviceName)
+                }
+                if (rssiByAddress[device.address] != result.rssi) {
+                    rssiByAddress = rssiByAddress + (device.address to result.rssi)
                 }
                 val advertisesMeterService = result.scanRecord?.serviceUuids
                     ?.any { it.uuid == BleRepository.ADVERTISED_SERVICE_UUID } == true
@@ -143,29 +153,12 @@ fun BleScannerScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Scan for Meters") },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (isScanning) {
-                            isScanning = false
-                            bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
-                        }
-                        onClose()
-                    }) {
-                        Text("←")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
             when {
                 bluetoothAdapter == null -> {
                     BlockingMessage(
@@ -192,12 +185,12 @@ fun BleScannerScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                            .padding(start = 8.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         PrimaryTabRow(
                             selectedTabIndex = selectedTabIndex,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                             modifier = Modifier.weight(1f)
                         ) {
                             Tab(
@@ -222,27 +215,29 @@ fun BleScannerScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
-                                contentDescription = "Refresh"
+                                contentDescription = "Scan again"
                             )
                         }
 
                         IconButton(
                             onClick = {
-                                isScanning = false
-                                bluetoothAdapter.bluetoothLeScanner?.stopScan(scanCallback)
-                            },
-                            enabled = isScanning
+                                if (isScanning) {
+                                    isScanning = false
+                                    bluetoothAdapter.bluetoothLeScanner?.stopScan(scanCallback)
+                                }
+                                onClose()
+                            }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = "Stop Scan"
+                                contentDescription = "Close scanner"
                             )
                         }
                     }
 
                     when (selectedTabIndex) {
-                        0 -> DeviceList(devices = eMeterDevices, names = deviceNames, onDeviceSelected = onDeviceSelected)
-                        1 -> DeviceList(devices = unknownDevices, names = deviceNames, onDeviceSelected = onDeviceSelected)
+                        0 -> DeviceList(eMeterDevices, deviceNames, rssiByAddress, onDeviceSelected)
+                        1 -> DeviceList(unknownDevices, deviceNames, rssiByAddress, onDeviceSelected)
                     }
                 }
             }
@@ -258,7 +253,7 @@ private fun BlockingMessage(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -279,6 +274,7 @@ private fun BlockingMessage(
 private fun DeviceList(
     devices: List<BluetoothDevice>,
     names: Map<String, String>,
+    rssi: Map<String, Int>,
     onDeviceSelected: (BluetoothDevice, String?) -> Unit
 ) {
     if (devices.isEmpty()) {
@@ -288,27 +284,45 @@ private fun DeviceList(
             style = MaterialTheme.typography.bodyMedium
         )
     } else {
-        LazyColumn {
-            items(devices) { device ->
+        // A plain Column: the panel lives in the Meter screen's scrolling area.
+        Column {
+            devices.forEach { device ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                         .clickable { onDeviceSelected(device, names[device.address]) }
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = names[device.address] ?: "Unknown Device",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = device.address,
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = names[device.address] ?: "Unknown Device",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = device.address,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        rssi[device.address]?.let { SignalStrength(it) }
                     }
                 }
             }
         }
+    }
+}
+
+/** Bars and dBm for one device: 3 bars from -65 dBm, 2 from -80, else 1. */
+@Composable
+private fun SignalStrength(dbm: Int) {
+    val icon = when {
+        dbm >= -65 -> Icons.Default.SignalCellularAlt
+        dbm >= -80 -> Icons.Default.SignalCellularAlt2Bar
+        else -> Icons.Default.SignalCellularAlt1Bar
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, contentDescription = "Signal $dbm dBm", tint = MaterialTheme.colorScheme.primary)
+        Text("$dbm dBm", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

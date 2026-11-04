@@ -58,7 +58,6 @@ import com.example.meterlinkind.data.protocol.InterfaceClass
 import com.example.meterlinkind.data.protocol.ObisCode
 import com.example.meterlinkind.data.protocol.ScalerUnit
 import com.example.meterlinkind.data.protocol.displayNumber
-import com.example.meterlinkind.presentation.components.ConnectionStrip
 import com.example.meterlinkind.presentation.viewmodel.AttributeState
 import com.example.meterlinkind.presentation.viewmodel.BufferSelection
 import com.example.meterlinkind.presentation.viewmodel.MeterConnectionUiState
@@ -75,7 +74,6 @@ fun ObjectDetailScreen(
     obj: CosemObject,
     connectionViewModel: MeterConnectionViewModel,
     browserViewModel: ObjectBrowserViewModel,
-    onConnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val connection by connectionViewModel.uiState.collectAsState()
@@ -91,13 +89,6 @@ fun ObjectDetailScreen(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        ConnectionStrip(
-            deviceName = connection.selectedDeviceName,
-            serialNumber = connection.serialNumber,
-            connectionState = connection.connectionState,
-            associated = online,
-            onConnect = onConnect,
-        )
         if (hasBufferTab) {
             PrimaryTabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Attributes") })

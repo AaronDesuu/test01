@@ -40,7 +40,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.meterlinkind.data.protocol.CosemObject
 import com.example.meterlinkind.data.protocol.InterfaceClass
-import com.example.meterlinkind.presentation.components.ConnectionStrip
 import com.example.meterlinkind.presentation.viewmodel.MeterConnectionViewModel
 import com.example.meterlinkind.presentation.viewmodel.ObjectBrowserViewModel
 import java.text.DateFormat
@@ -55,7 +54,6 @@ fun ObjectListScreen(
     classId: Int,
     connectionViewModel: MeterConnectionViewModel,
     browserViewModel: ObjectBrowserViewModel,
-    onConnect: () -> Unit,
     onOpen: (CosemObject) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -75,13 +73,6 @@ fun ObjectListScreen(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        ConnectionStrip(
-            deviceName = connection.selectedDeviceName,
-            serialNumber = connection.serialNumber,
-            connectionState = connection.connectionState,
-            associated = connection.isDlmsConnected,
-            onConnect = onConnect,
-        )
 
         val list = browser.objectList
         if (list == null) {

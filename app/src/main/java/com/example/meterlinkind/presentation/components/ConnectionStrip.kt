@@ -1,6 +1,12 @@
 package com.example.meterlinkind.presentation.components
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,9 +24,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -83,6 +91,60 @@ fun ConnectionStrip(
                 )
             }
             StatusChip(connectionState, associated)
+        }
+    }
+}
+
+/**
+ * Compact meter status for the top bar of the object screens: a green dot and
+ * the meter's name when online, a blinking blue dot and "Connecting", or a
+ * hollow grey dot and "Offline". The full card with the serial stays in the
+ * side menu.
+ */
+@Composable
+fun MeterStatusPill(
+    deviceName: String?,
+    connectionState: BleConnectionState,
+    associated: Boolean,
+    onClick: () -> Unit,
+) {
+    val online = connectionState is BleConnectionState.Connected && associated
+    val connecting = connectionState is BleConnectionState.Connecting ||
+        (connectionState is BleConnectionState.Connected && !associated)
+    val (container, content) = when {
+        online -> OnlineContainer to OnlineColor
+        connecting -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val blink by rememberInfiniteTransition(label = "pill dot").animateFloat(
+        initialValue = 1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
+        label = "pill dot alpha"
+    )
+    Surface(onClick = onClick, shape = CircleShape, color = container, modifier = Modifier.padding(end = 8.dp)) {
+        Row(
+            modifier = Modifier.padding(start = 8.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val dot = Modifier.size(8.dp)
+            when {
+                online -> Box(dot.background(content, CircleShape))
+                connecting -> Box(dot.graphicsLayer { alpha = blink }.background(content, CircleShape))
+                else -> Box(dot.border(1.5.dp, content, CircleShape))
+            }
+            Text(
+                text = when {
+                    online -> deviceName ?: "Meter"
+                    connecting -> "Connecting"
+                    else -> "Offline"
+                },
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                color = if (online) MaterialTheme.colorScheme.onSurface else content,
+                maxLines = 1
+            )
         }
     }
 }
