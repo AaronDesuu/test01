@@ -56,6 +56,7 @@ fun AppDrawer(
     currentRoute: String,
     navigate: (String) -> Unit,
     logout: () -> Unit,
+    connect: () -> Unit,
     closeDrawer: () -> Unit,
     connectionViewModel: MeterConnectionViewModel
 ) {
@@ -89,6 +90,10 @@ fun AppDrawer(
                     serialNumber = connectionState.serialNumber,
                     connectionState = connectionState.connectionState,
                     associated = connectionState.isDlmsConnected,
+                    onConnect = {
+                        closeDrawer()
+                        connect()
+                    },
                 )
             }
 

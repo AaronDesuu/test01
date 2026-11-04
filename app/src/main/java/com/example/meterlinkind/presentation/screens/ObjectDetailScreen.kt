@@ -70,6 +70,7 @@ fun ObjectDetailScreen(
     obj: CosemObject,
     connectionViewModel: MeterConnectionViewModel,
     browserViewModel: ObjectBrowserViewModel,
+    onConnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val connection by connectionViewModel.uiState.collectAsState()
@@ -90,6 +91,7 @@ fun ObjectDetailScreen(
             serialNumber = connection.serialNumber,
             connectionState = connection.connectionState,
             associated = online,
+            onConnect = onConnect,
         )
         if (hasBufferTab) {
             PrimaryTabRow(selectedTabIndex = tab) {

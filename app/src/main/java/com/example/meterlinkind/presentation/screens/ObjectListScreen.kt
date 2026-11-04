@@ -55,6 +55,7 @@ fun ObjectListScreen(
     classId: Int,
     connectionViewModel: MeterConnectionViewModel,
     browserViewModel: ObjectBrowserViewModel,
+    onConnect: () -> Unit,
     onOpen: (CosemObject) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -79,6 +80,7 @@ fun ObjectListScreen(
             serialNumber = connection.serialNumber,
             connectionState = connection.connectionState,
             associated = connection.isDlmsConnected,
+            onConnect = onConnect,
         )
 
         val list = browser.objectList

@@ -72,6 +72,14 @@ fun MeterConnectionScreen(
 
     BackHandler(enabled = openObject != null) { openObis = null }
 
+    var showScanner by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = showScanner) { showScanner = false }
+    // From any screen: reconnect to the last meter, or scan for one.
+    val connect = {
+        val device = connection.selectedDevice
+        if (device != null) viewModel.connectToDevice(device) else showScanner = true
+    }
+
     // The object list belongs to a meter (serial) and client; load the stored one when either changes.
     LaunchedEffect(connection.serialNumber, loggedInClient) {
         browserViewModel.onMeter(connection.serialNumber, loggedInClient)
@@ -84,6 +92,7 @@ fun MeterConnectionScreen(
                 currentRoute = currentScreen,
                 navigate = navigate,
                 logout = viewModel::logout,
+                connect = connect,
                 closeDrawer = { scope.launch { drawerState.close() } },
                 connectionViewModel = viewModel
             )
@@ -109,10 +118,18 @@ fun MeterConnectionScreen(
         ) { padding ->
             val browsedClass = BROWSER_CLASSES[currentScreen]
             when {
+                showScanner -> BleScannerScreen(
+                    onDeviceSelected = { device, name ->
+                        viewModel.connectToDevice(device, name)
+                        showScanner = false
+                    },
+                    onClose = { showScanner = false }
+                )
                 browsedClass != null && openObject != null -> ObjectDetailScreen(
                     obj = openObject,
                     connectionViewModel = viewModel,
                     browserViewModel = browserViewModel,
+                    onConnect = connect,
                     modifier = Modifier.padding(padding)
                 )
                 browsedClass != null -> ObjectListScreen(
@@ -120,6 +137,7 @@ fun MeterConnectionScreen(
                     connectionViewModel = viewModel,
                     browserViewModel = browserViewModel,
                     onOpen = { openObis = it.obis.toString() },
+                    onConnect = connect,
                     modifier = Modifier.padding(padding)
                 )
                 currentScreen == "keys" -> SecurityKeysScreen(
@@ -135,6 +153,7 @@ fun MeterConnectionScreen(
                 else -> HomeContent(
                     viewModel = viewModel,
                     onNavigate = navigate,
+                    onScan = { showScanner = true },
                     modifier = Modifier.padding(padding)
                 )
             }
@@ -170,21 +189,13 @@ fun HomeContent(
     modifier: Modifier = Modifier,
     viewModel: MeterConnectionViewModel,
     onNavigate: (String) -> Unit = {},
+    onScan: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showScanner by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    if (showScanner) {
-        BleScannerScreen(
-            onDeviceSelected = { device, name ->
-                viewModel.connectToDevice(device, name)
-                showScanner = false
-            },
-            onClose = { showScanner = false }
-        )
-    } else {
+    run {
         Box(
             modifier = modifier.fillMaxSize()
         ) {
@@ -383,7 +394,7 @@ fun HomeContent(
                                 }
 
                                 Button(
-                                    onClick = { showScanner = true },
+                                    onClick = onScan,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(56.dp),

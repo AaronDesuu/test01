@@ -33,7 +33,8 @@ private val OnlineContainer = Color(0xFFD5F3E3)
 
 /**
  * One line naming the meter this screen talks to: device, serial, client and
- * link state. Sits at the top of every meter screen.
+ * link state. Sits at the top of every meter screen. While offline, tapping
+ * it calls [onConnect] (reconnect to the last meter, or scan for one).
  */
 @Composable
 fun ConnectionStrip(
@@ -41,10 +42,15 @@ fun ConnectionStrip(
     serialNumber: String?,
     connectionState: BleConnectionState,
     associated: Boolean,
+    onConnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val online = connectionState is BleConnectionState.Connected && associated
+    val connecting = connectionState is BleConnectionState.Connecting ||
+        (connectionState is BleConnectionState.Connected && !associated)
     Surface(
+        onClick = onConnect,
+        enabled = !online && !connecting,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         color = if (online) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -67,9 +73,13 @@ fun ConnectionStrip(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    serialNumber?.let { "S/N $it" } ?: if (online) "Reading serial..." else "Connect from Home",
+                    when {
+                        online -> serialNumber?.let { "S/N $it" } ?: "Reading serial..."
+                        connecting -> "Connecting..."
+                        else -> "Click here to connect"
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = if (online) FontFamily.Monospace else null
                 )
             }
             StatusChip(connectionState, associated)
