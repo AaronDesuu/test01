@@ -135,8 +135,7 @@ class ObjectBrowserViewModel @Inject constructor(
         viewModelScope.launch {
             bleRepository.connectionState.collect { state ->
                 if (state is BleConnectionState.Disconnected || state is BleConnectionState.Error) {
-                    // Values belong to the session; the stored object list stays.
-                    // scalers stay: they don't change while the meter is away.
+                    // Values belong to the session; the object list and scalers stay.
                     _uiState.update { it.copy(attributes = emptyMap(), buffers = emptyMap(), clockMessage = null, relayMessage = null) }
                 }
             }
@@ -294,7 +293,7 @@ class ObjectBrowserViewModel @Inject constructor(
             if (attribute == SCALER_UNIT) {
                 ScalerUnit.parse(data)?.let { su -> _uiState.update { it.copy(scalers = it.scalers + (obj.obis to su)) } }
             } else if (withScaler && attribute == VALUE && obj.obis !in _uiState.value.scalers && obj.canRead(SCALER_UNIT)) {
-                readNow(obj, SCALER_UNIT) // a value means little without its unit
+                readNow(obj, SCALER_UNIT)
             }
         }
         return data

@@ -89,7 +89,7 @@ fun MeterConnectionScreen(
     val loggedInClient = connection.client
 
     if (loggedInClient == null) {
-        // Show the keys first, so they can be checked before connecting.
+        // After login, open the keys first so they can be checked before connecting.
         LoginScreen(onLogin = { user, pass ->
             viewModel.login(user, pass).also {
                 if (it) {
@@ -139,7 +139,6 @@ fun MeterConnectionScreen(
         if (device != null) {
             viewModel.connectToDevice(device)
         } else {
-            // The scanner opens under the meter card on the Meter screen.
             navigate("home")
             showScanner = true
         }
@@ -170,7 +169,7 @@ fun MeterConnectionScreen(
                         Text(openObject?.name ?: getScreenTitle(currentScreen), maxLines = 1)
                     },
                     actions = {
-                        // Object screens show the meter as a pill here instead of a card under the bar.
+                        // Object screens show the meter's status as a pill.
                         if (currentScreen in BROWSER_CLASSES) {
                             val online = connection.connectionState is BleConnectionState.Connected
                             MeterStatusPill(
@@ -306,9 +305,8 @@ fun HomeContent(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.TopCenter
             ) {
-                // While nothing is connected and the scanner is closed, the card and its buttons
-                // sit in the middle of the screen; scanning or connecting moves them to the top.
-                // The gap above the card is measured from the real sizes and animated.
+                // The card sits in the middle while idle with the scanner closed, at the top
+                // otherwise. The gap above it is computed from the measured sizes.
                 var areaHeight by remember { mutableIntStateOf(0) }
                 var cardHeight by remember { mutableIntStateOf(0) }
                 var buttonsHeight by remember { mutableIntStateOf(0) }
@@ -320,7 +318,7 @@ fun HomeContent(
                 val targetGap = if (centered && measured) {
                     with(density) {
                         val free = areaHeight - 16.dp.toPx() - cardHeight - 16.dp.toPx() - buttonsHeight
-                        // A little above the exact middle, where it looks centred.
+                        // Slightly above the true middle.
                         (free / 2f * 0.85f).coerceAtLeast(0f)
                     }
                 } else 0f
@@ -328,7 +326,7 @@ fun HomeContent(
                 var placed by remember { mutableStateOf(false) }
                 LaunchedEffect(targetGap, measured) {
                     if (!placed) {
-                        // First layout: put it in place without sliding in from the top.
+                        // First layout: no slide.
                         topGap.snapTo(targetGap)
                         if (measured) placed = true
                     } else {
@@ -343,8 +341,7 @@ fun HomeContent(
                         .padding(start = 16.dp, top = 16.dp, end = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Meter card (compact row): stays at the top while the rest scrolls. Badge
-                    // rings/pop/shake (B); status text slides and details unfold (D).
+                    // Meter card; the area below it scrolls.
                     val state = uiState.connectionState
                     val failed = state is BleConnectionState.Error
                     val shake = rememberFailureShake(failed)
@@ -361,8 +358,7 @@ fun HomeContent(
                             .offset { IntOffset(shake.value.roundToInt(), 0) },
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp)
                     ) {
-                        // Big and centred while nothing is connected and the scanner is closed,
-                        // the compact row otherwise; the circle travels, the texts crossfade.
+                        // Big card while idle, compact row otherwise.
                         val compactness by animateFloatAsState(
                             if (centered) 0f else 1f,
                             tween(450, easing = FastOutSlowInEasing),
@@ -449,7 +445,7 @@ fun HomeContent(
                                     )
                                 }
 
-                                // Kept while folding away, so the text doesn't vanish mid-animation.
+                                // Kept for the fold-away animation after the error clears.
                                 var lastFailure by remember { mutableStateOf("") }
                                 (state as? BleConnectionState.Error)?.let { lastFailure = it.message }
                                 AnimatedVisibility(
@@ -483,7 +479,6 @@ fun HomeContent(
                                     val serial = uiState.serialNumber?.takeIf {
                                         it.isNotEmpty() && state is BleConnectionState.Connected
                                     }
-                                    // Serial on its own line, the MAC under it.
                                     Column {
                                         if (serial != null) Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
@@ -539,7 +534,7 @@ fun HomeContent(
                         )
                     }
 
-                    // Below the fixed meter card: scrolls on its own as more object types are added.
+                    // Scrolls under the meter card.
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -593,8 +588,7 @@ fun HomeContent(
                         }
 
                         is BleConnectionState.Connected -> {
-                            // Heading and tile rows slide down into view one after another; the
-                            // scrolling area clips above its top, so they come out from under the card.
+                            // Rows slide down one after another, out from under the card.
                             SlideDownIn(index = 0) {
                                 Text(
                                     text = "Browse the meter",
@@ -603,7 +597,7 @@ fun HomeContent(
                                 )
                             }
 
-                            // Always three columns; a short last row keeps the same tile width.
+                            // Spacers keep the tiles of a short last row the same width.
                             OBJECT_ENTRIES.chunked(3).forEachIndexed { row, pair ->
                                 SlideDownIn(index = row + 1) {
                                     Row(
@@ -639,7 +633,6 @@ fun HomeContent(
                 }
             }
 
-            // Snackbar at bottom
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier
@@ -658,10 +651,7 @@ fun HomeContent(
     }
 }
 
-/**
- * Shows [content] sliding down and fading in when it first appears, [index]
- * steps of 60 ms after the first, so a column of rows unrolls top to bottom.
- */
+/** Slides [content] down and fades it in when first shown, [index] × 60 ms after the first row. */
 @Composable
 private fun SlideDownIn(index: Int, content: @Composable () -> Unit) {
     val visible = remember { MutableTransitionState(false).apply { targetState = true } }
@@ -744,10 +734,7 @@ fun CopyableText(
         )
     )
 }
-/**
- * Closes the drawer with a visible slide. Material 3's own close() is quick enough
- * that the drawer seems to vanish, especially while the next screen is drawn.
- */
+/** Closes the drawer over 300 ms; Material 3's close() is so fast the drawer seems to vanish. */
 private suspend fun DrawerState.slideClosed() =
     animateTo(DrawerValue.Closed, tween(DRAWER_CLOSE_MS, easing = FastOutSlowInEasing))
 

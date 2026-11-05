@@ -266,7 +266,6 @@ class BleRepository(private val context: Context) {
     fun connectToDevice(device: BluetoothDevice) {
         mainHandler.removeCallbacks(connectTimeout) // a previous attempt's timer must not end this one
         _connectionState.value = BleConnectionState.Connecting
-        // Clear old data channel and create a fresh one for new connection
         _dataChannel.close()
         _dataChannel = Channel(Channel.UNLIMITED)
         canSend.value = true

@@ -284,7 +284,7 @@ private fun DeviceList(
             style = MaterialTheme.typography.bodyMedium
         )
     } else {
-        // A plain Column: the panel lives in the Meter screen's scrolling area.
+        // Not a LazyColumn: the panel sits inside the Meter screen's scrolling column.
         Column {
             devices.forEach { device ->
                 Card(

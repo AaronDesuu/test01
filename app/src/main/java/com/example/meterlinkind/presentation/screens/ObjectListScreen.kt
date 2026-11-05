@@ -55,10 +55,7 @@ import com.example.meterlinkind.presentation.viewmodel.ObjectBrowserViewModel
 import java.text.DateFormat
 import java.util.Date
 
-/**
- * The meter's objects of one interface class, searchable by OBIS or name,
- * like the Gurux object tree. The list is the one read from the meter.
- */
+/** The objects of one interface class in the list read from the meter, searchable by OBIS or name. */
 @Composable
 fun ObjectListScreen(
     classId: Int,
@@ -94,16 +91,6 @@ fun ObjectListScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text("No object list for this meter yet", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    if (browser.meterSerial == null) {
-                        "Connect to a meter, then read its object list. It's kept on this phone for next time."
-                    } else {
-                        "Read the objects ${browser.meterSerial} offers this client. It's kept on this phone for next time."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
                 Button(onClick = browserViewModel::readObjectList, enabled = canRead) {
                     if (browser.readingList) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
@@ -165,7 +152,7 @@ fun ObjectListScreen(
         Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
                 state = listState,
-                // Room for the read bar, so the last row can scroll above it.
+                // Room for the read bar under the last row.
                 contentPadding = PaddingValues(bottom = if (showValues && online) 84.dp else 8.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -182,7 +169,7 @@ fun ObjectListScreen(
                 }
             }
             if (showValues && online && objects.isNotEmpty()) {
-                // Every object in the list (as filtered by the search) whose value this client may read.
+                // The objects in the (filtered) list whose value this client may read.
                 val readable = remember(objects) { objects.filter { it.canRead(ObjectBrowserViewModel.VALUE) } }
                 ReadValuesBar(
                     count = readable.size,

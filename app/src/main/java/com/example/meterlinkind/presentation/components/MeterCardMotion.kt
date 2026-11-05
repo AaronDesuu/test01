@@ -52,9 +52,9 @@ import androidx.compose.ui.layout.Layout
 import com.example.meterlinkind.data.repository.BleConnectionState
 
 /**
- * The meter card's status circle (motion option B): grey when idle, rings
- * rippling out while connecting, a check that pops in when connected, red on
- * failure. Shrinks a little when connected to make room for the details.
+ * Status circle of the meter card: grey when idle, rings while connecting, a
+ * check that pops in when connected, red on failure. At full size it shrinks a
+ * little when connected.
  */
 @Composable
 fun MeterStatusBadge(state: BleConnectionState, modifier: Modifier = Modifier, size: Dp = 80.dp) {
@@ -149,10 +149,7 @@ private fun ConnectingRings(color: Color, size: Dp) {
     }
 }
 
-/**
- * The status line (motion option D): the old text slides up and out while the
- * new one slides in from below.
- */
+/** Status line: the old text slides up and out, the new one in from below. */
 @Composable
 fun MeterStatusTitle(
     text: String,
@@ -193,11 +190,10 @@ fun rememberFailureShake(failed: Boolean): Animatable<Float, *> {
 }
 
 /**
- * The meter card's two layouts in one: at [progress] 0 the big centred card (circle
- * on top, [big] text under it), at 1 the compact row (small circle on the left,
- * [compact] beside it). In between the circle shrinks and travels, the card's
- * height follows, and the two texts crossfade (one fades out before the other
- * fades in). [badge] gets the circle size to draw.
+ * Both meter card layouts: [progress] 0 is the big card (circle on top, [big]
+ * below), 1 the compact row (small circle left, [compact] beside it). In
+ * between, the circle shrinks and moves, the height follows and the texts
+ * crossfade. [badge] draws the circle at the size it is given.
  */
 @Composable
 fun MeterCardMorph(

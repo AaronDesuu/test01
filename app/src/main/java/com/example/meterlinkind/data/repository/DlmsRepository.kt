@@ -54,7 +54,6 @@ class DlmsRepository @Inject constructor(
     private val operationMutex = Mutex()
 
     init {
-        // Load from SharedPreferences and apply to DLMS
         val settings = settingsRepository.getSettings()
         dlms.readMeterInformation()
         dlms.Account(settings["account"]!!, -1)
@@ -324,7 +323,6 @@ class DlmsRepository @Inject constructor(
         }
     }
 
-    /** SETs one attribute to [value] (one encoded `Data`); null on success, else the reason. */
     /** ACTIONs [target] with [parameter] (one encoded `Data`, or null); null on success, else the reason. */
     suspend fun invoke(target: CosemMethod, parameter: ByteArray?): String? = operationMutex.withLock {
         if (association == null) return@withLock "Not connected to a meter"
@@ -343,6 +341,7 @@ class DlmsRepository @Inject constructor(
         }
     }
 
+    /** SETs one attribute to [value] (one encoded `Data`); null on success, else the reason. */
     suspend fun write(target: CosemAttribute, value: ByteArray): String? = operationMutex.withLock {
         if (association == null) return@withLock "Not connected to a meter"
         Log.d(TAG, "SET ${target.name} (class ${target.classId}, ${target.obis}, attr ${target.attribute})")
@@ -386,7 +385,6 @@ class DlmsRepository @Inject constructor(
             var data = dlms.DataRes(ret, response, true)
             allData.addAll(data)
 
-            // Handle block transfer
             while (ret[0] == 2 && ret[1] == 0) {
                 emit(MeterDataResult.Partial(ArrayList(allData)))
 
@@ -418,7 +416,6 @@ class DlmsRepository @Inject constructor(
 
     fun updateSettings(account: String, password: String, address: String, rank: String, scan: String, tick: String, interval: String) {
         settingsRepository.saveSettings(account, password, address, rank, scan, tick, interval)
-        // Also update DLMS
         dlms.Account(account, -1)
         dlms.Password(password, -1)
         dlms.writeAddress(address, -1)
@@ -493,7 +490,6 @@ class DlmsRepository @Inject constructor(
             emit(MeterDataResult.Loading)
             Log.d(TAG, "Setting clock to current time")
 
-            // Get current time
             val calendar = java.util.Calendar.getInstance()
             val dateTime = String.format(
                 "%04d%02d%02d%02d%02d%02d",
@@ -535,8 +531,6 @@ class DlmsRepository @Inject constructor(
             emit(MeterDataResult.Loading)
             Log.d(TAG, "Setting meter type")
 
-            // This needs to cycle through meter type settings (Imp-Exp/ABS/NET)
-            // You may need to read current type first, then set next type
             val request = dlms.setReq(DLMS.IST_TYPE, 2.toByte(), 0.toByte(), "", 0)
 
             if (!bleRepository.writeCharacteristic(request)) {
@@ -565,7 +559,6 @@ class DlmsRepository @Inject constructor(
             emit(MeterDataResult.Loading)
             Log.d(TAG, "Clearing all measured data")
 
-            // Reset absolute energy data
             val request = dlms.actReq(DLMS.IST_ABS_ENERGY, 1.toByte(), "0f00", 0)
 
             if (!bleRepository.writeCharacteristic(request)) {
@@ -594,7 +587,6 @@ class DlmsRepository @Inject constructor(
             emit(MeterDataResult.Loading)
             Log.d(TAG, "Setting missing neutral detection: $enable")
 
-            // Set missing neutral detection ON/OFF
             val parameter = if (enable) "01" else "00"
             val request = dlms.setReq(DLMS.IST_DETECT, 2.toByte(), 0.toByte(), parameter, 0)
 
@@ -625,7 +617,6 @@ class DlmsRepository @Inject constructor(
             emit(MeterDataResult.Loading)
             Log.d(TAG, "Setting power network type: $networkType")
 
-            // Set power network configuration (1 or 2)
             val parameter = String.format("%02d", networkType)
             val request = dlms.setReq(DLMS.IST_MODEL, 2.toByte(), 0.toByte(), parameter, 0)
 
@@ -655,7 +646,6 @@ class DlmsRepository @Inject constructor(
             emit(MeterDataResult.Loading)
             Log.d(TAG, "Setting potential configuration")
 
-            // Configure potential settings
             val request = dlms.actReq(DLMS.IST_CAL_VOLTAMP, 1.toByte(), "0f00", 0)
 
             if (!bleRepository.writeCharacteristic(request)) {
@@ -684,7 +674,6 @@ class DlmsRepository @Inject constructor(
             emit(MeterDataResult.Loading)
             Log.d(TAG, "Setting type configuration")
 
-            // Configure type settings
             val request = dlms.setReq(DLMS.IST_TYPE, 2.toByte(), 0.toByte(), "", 0)
 
             if (!bleRepository.writeCharacteristic(request)) {

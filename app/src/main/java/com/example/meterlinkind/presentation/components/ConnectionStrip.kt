@@ -35,14 +35,13 @@ import androidx.compose.ui.unit.dp
 import com.example.meterlinkind.data.protocol.ClientProfile
 import com.example.meterlinkind.data.repository.BleConnectionState
 
-/** Status colours: meaning, not brand, so they stay green/red in both themes. */
+/** Status colours, the same in both themes. */
 internal val OnlineColor = Color(0xFF1E8E5A)
 private val OnlineContainer = Color(0xFFD5F3E3)
 
 /**
- * One line naming the meter this screen talks to: device, serial, client and
- * link state. Sits at the top of every meter screen. While offline, tapping
- * it calls [onConnect] (reconnect to the last meter, or scan for one).
+ * The drawer's connection line: device, serial, client and link state. While
+ * offline, tapping it calls [onConnect] (reconnect to the last meter, or scan).
  */
 @Composable
 fun ConnectionStrip(
@@ -96,10 +95,9 @@ fun ConnectionStrip(
 }
 
 /**
- * Compact meter status for the top bar of the object screens: a green dot and
- * the meter's name when online, a blinking blue dot and "Connecting", or a
- * hollow grey dot and "Offline". The full card with the serial stays in the
- * side menu.
+ * Meter status in the top bar of the object screens: a green dot and the
+ * meter's name when online, a blinking blue dot and "Connecting", or a hollow
+ * grey dot and "Offline".
  */
 @Composable
 fun MeterStatusPill(
@@ -170,7 +168,7 @@ fun StatusChip(connectionState: BleConnectionState, associated: Boolean) {
     }
 }
 
-/** The logged-in DLMS client, amber like the icon's needle. */
+/** Badge for the logged-in DLMS client. */
 @Composable
 fun RoleBadge(client: ClientProfile) {
     Text(

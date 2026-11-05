@@ -72,7 +72,7 @@ fun BufferReadingOptions(
     var first by rememberSaveable { mutableStateOf("1") }
     var count by rememberSaveable { mutableStateOf("1") }
     var days by rememberSaveable { mutableStateOf("0") }
-    // LocalDateTime.toString(), so the choice survives rotation.
+    // Saved as LocalDateTime.toString().
     var from by rememberSaveable { mutableStateOf(LocalDate.now().atStartOfDay().toString()) }
     var to by rememberSaveable { mutableStateOf(LocalDateTime.now().withSecond(0).withNano(0).toString()) }
 

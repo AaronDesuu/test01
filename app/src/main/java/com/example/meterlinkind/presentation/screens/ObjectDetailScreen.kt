@@ -352,7 +352,7 @@ private fun BufferTable(
     }
 }
 
-/** Gurux's Disconnect / Reconnect buttons; both switch the meter's relay, so each asks first. */
+/** Disconnect and Reconnect buttons for the meter's relay; each asks for confirmation first. */
 @Composable
 private fun RelayCard(meter: String, message: String?, enabled: Boolean, onSwitch: (reconnect: Boolean) -> Unit) {
     var confirm by rememberSaveable { mutableStateOf<Boolean?>(null) } // true = reconnect
@@ -427,10 +427,9 @@ private fun SetClockCard(meter: String, clockName: String, message: String?, ena
 }
 
 /**
- * Attribute values the way Gurux shows them: OBIS for logical names, columns
- * for capture objects, Register values scaled with their unit.
+ * An attribute's value for the detail page and the object lists: OBIS for
+ * logical names, columns for capture objects, Register values scaled with their unit.
  */
-/** An attribute's value as the browser shows it; also used for the values in the object lists. */
 internal fun formatValue(classId: Int, attribute: Int, data: DlmsData, scaler: ScalerUnit?, decimals: Int?): String = when {
     attribute == 1 && data is DlmsData.OctetString && data.bytes.size == 6 -> ObisCode.of(data.bytes).toString()
     InterfaceClass.hasScaler(classId) && attribute == ObjectBrowserViewModel.VALUE && scaler != null -> scaler.format(data, decimals)
