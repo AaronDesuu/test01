@@ -167,9 +167,7 @@ fun MeterConnectionScreen(
             topBar = {
                 CenterAlignedTopAppBar(
                     title = {
-                        // The Meter screen is titled with the meter it's connected to.
-                        val meterName = connection.selectedDeviceName.takeIf { connection.isDlmsConnected }
-                        Text(openObject?.name ?: meterName.takeIf { currentScreen == "home" } ?: getScreenTitle(currentScreen), maxLines = 1)
+                        Text(openObject?.name ?: getScreenTitle(currentScreen), maxLines = 1)
                     },
                     actions = {
                         // Object screens show the meter as a pill here instead of a card under the bar.
@@ -270,7 +268,7 @@ private const val EXIT_CONFIRM_MS = 2000L
 private val SUB_PAGES = mapOf("saved" to "settings", "keys" to "settings")
 
 private fun getScreenTitle(screen: String): String = when (screen) {
-    "home" -> "Meter"
+    "home" -> "Meter Link"
     "data" -> "Data"
     "register" -> "Register"
     "extregister" -> "Extended Register"
