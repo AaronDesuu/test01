@@ -203,8 +203,8 @@ fun MeterConnectionScreen(
                         Text(openObject?.name ?: getScreenTitle(currentScreen), maxLines = 1)
                     },
                     actions = {
-                        // Object screens show the meter's status as a pill.
-                        if (currentScreen in BROWSER_CLASSES) {
+                        // The Meter page and the object screens show the meter's status as a pill.
+                        if (currentScreen == "home" || currentScreen in BROWSER_CLASSES) {
                             val online = connection.connectionState is BleConnectionState.Connected
                             MeterStatusPill(
                                 deviceName = connection.selectedDeviceName,
