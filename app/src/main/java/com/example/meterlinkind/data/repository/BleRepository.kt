@@ -184,6 +184,10 @@ class BleRepository(private val context: Context) {
         override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
             Log.d(TAG, "MTU changed to $mtu (status $status)")
             if (status == BluetoothGatt.GATT_SUCCESS) this@BleRepository.mtu = mtu
+            // Some phones settle on a slow connection interval (25 ms on a Galaxy A06), and the
+            // meter's module then drops bytes from long replies. Ask for the fastest interval.
+            val fast = gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+            Log.d(TAG, "Requested high connection priority: $fast")
             linkReadyAt = SystemClock.elapsedRealtime() + LINK_SETTLE_MS
             _connectionState.value = BleConnectionState.Connected
         }
