@@ -1,5 +1,7 @@
 package com.example.meterlinkind.presentation.screens
 
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -91,6 +93,12 @@ fun ObjectListScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text("No object list for this meter yet", style = MaterialTheme.typography.titleMedium)
+                browser.reuseCandidate?.let { source ->
+                    FilledTonalButton(onClick = browserViewModel::reuseList, enabled = !browser.readingList) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("  Use list from ${source.serial}")
+                    }
+                }
                 Button(onClick = browserViewModel::readObjectList, enabled = canRead) {
                     if (browser.readingList) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
@@ -128,6 +136,7 @@ fun ObjectListScreen(
                     append("${objects.size} objects")
                     if (showValues) append(" · $valuesRead read")
                     append(" · list from ")
+                    list.copiedFrom?.let { append("$it, ") }
                     append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(list.readAtMillis)))
                 },
                 style = MaterialTheme.typography.bodySmall,

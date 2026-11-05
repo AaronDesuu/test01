@@ -1,5 +1,6 @@
 package com.example.meterlinkind.presentation.screens
 
+import com.example.meterlinkind.data.model.NewMeterListMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -90,7 +91,23 @@ fun SettingsScreen(
 
         SectionTitle("Data & display")
         SettingsCard {
-            ReadModeRow(browser.bufferReadMode, browserViewModel::setBufferReadMode)
+            ChoiceRow(
+                title = "Buffer reading starts at",
+                subtitle = "The option the Reading box opens with",
+                selected = browser.bufferReadMode,
+                options = BufferReadMode.entries,
+                label = { it.label },
+                onChange = browserViewModel::setBufferReadMode,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            ChoiceRow(
+                title = "New meters",
+                subtitle = "For a meter with no saved object list",
+                selected = browser.newMeterListMode,
+                options = NewMeterListMode.entries,
+                label = { it.label },
+                onChange = browserViewModel::setNewMeterListMode,
+            )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Decimals", style = MaterialTheme.typography.titleSmall)
@@ -169,9 +186,16 @@ private fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
     }
 }
 
-/** The mode the buffer reader opens with, picked from a menu. */
+/** A setting picked from a menu; the current choice shows as a chip. */
 @Composable
-private fun ReadModeRow(mode: BufferReadMode, onChange: (BufferReadMode) -> Unit) {
+private fun <T> ChoiceRow(
+    title: String,
+    subtitle: String,
+    selected: T,
+    options: List<T>,
+    label: (T) -> String,
+    onChange: (T) -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     Box {
         Row(
@@ -182,15 +206,15 @@ private fun ReadModeRow(mode: BufferReadMode, onChange: (BufferReadMode) -> Unit
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Buffer reading starts at", style = MaterialTheme.typography.titleSmall)
+                Text(title, style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "The option the Reading box opens with",
+                    subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Text(
-                mode.label,
+                label(selected),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -200,8 +224,8 @@ private fun ReadModeRow(mode: BufferReadMode, onChange: (BufferReadMode) -> Unit
             )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            BufferReadMode.entries.forEach {
-                DropdownMenuItem(text = { Text(it.label) }, onClick = { onChange(it); open = false })
+            options.forEach {
+                DropdownMenuItem(text = { Text(label(it)) }, onClick = { onChange(it); open = false })
             }
         }
     }

@@ -1,5 +1,18 @@
 package com.example.meterlinkind.presentation.screens
 
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.window.Dialog
+import com.example.meterlinkind.data.model.NewMeterListMode
+import androidx.compose.material3.TextButton
+import com.example.meterlinkind.data.repository.SavedMeter
+import java.text.DateFormat
+import java.util.Date
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.app.Activity
@@ -148,6 +161,23 @@ fun MeterConnectionScreen(
     LaunchedEffect(connection.serialNumber, loggedInClient) {
         browserViewModel.onMeter(connection.serialNumber, loggedInClient)
     }
+    val browserState by browserViewModel.uiState.collectAsState()
+    val reuseSource = browserState.reuseCandidate
+    if (browserState.askReuse && reuseSource != null) {
+        ReuseListDialog(
+            meter = browserState.meterSerial ?: "This meter",
+            source = reuseSource,
+            onReuse = { remember ->
+                if (remember) browserViewModel.setNewMeterListMode(NewMeterListMode.REUSE)
+                browserViewModel.reuseList()
+            },
+            onRead = { remember ->
+                if (remember) browserViewModel.setNewMeterListMode(NewMeterListMode.READ)
+                browserViewModel.dismissReuse(read = true)
+            },
+            onDismiss = { browserViewModel.dismissReuse(read = false) },
+        )
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -247,6 +277,99 @@ fun MeterConnectionScreen(
             }
         }
     }
+}
+
+/**
+ * Asks, for a meter new to the phone, whether to copy another meter's object
+ * list or read its own. "Don't ask again" turns the choice made into the New
+ * meters setting. Closing the dialog leaves the choice to the object list screens.
+ */
+@Composable
+private fun ReuseListDialog(
+    meter: String,
+    source: SavedMeter,
+    onReuse: (remember: Boolean) -> Unit,
+    onRead: (remember: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var dontAsk by rememberSaveable { mutableStateOf(false) }
+    val date = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(source.readAtMillis))
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text("New meter", style = MaterialTheme.typography.headlineSmall)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SerialChip(source.serial, MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.onSurface)
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "to",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SerialChip(meter, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+                Text(
+                    "Copy the saved object list to this meter?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { onReuse(dontAsk) }, modifier = Modifier.fillMaxWidth()) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Use saved list")
+                            Text(
+                                "$date · ${source.objectCount} objects",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Normal
+                            )
+                        }
+                    }
+                    OutlinedButton(onClick = { onRead(dontAsk) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Read from meter")
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { dontAsk = !dontAsk },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Don't ask again", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Change it in Settings",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = dontAsk, onCheckedChange = { dontAsk = it })
+                }
+            }
+        }
+    }
+}
+
+/** A meter serial in a small rounded box. */
+@Composable
+private fun SerialChip(serial: String, background: Color, content: Color) {
+    Text(
+        serial,
+        style = MaterialTheme.typography.labelMedium,
+        fontFamily = FontFamily.Monospace,
+        color = content,
+        maxLines = 1,
+        modifier = Modifier
+            .background(background, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 5.dp)
+    )
 }
 
 /** Drawer routes that browse one interface class. */

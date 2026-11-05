@@ -2,6 +2,7 @@ package com.example.meterlinkind.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.meterlinkind.data.model.NewMeterListMode
 import com.example.meterlinkind.data.protocol.CaptureObject
 import com.example.meterlinkind.data.protocol.ClientProfile
 import com.example.meterlinkind.data.protocol.ClockValue
@@ -104,6 +105,12 @@ data class ObjectBrowserUiState(
     val decimals: Int? = 2,
     /** Mode the buffer reader opens with. From Settings. */
     val bufferReadMode: BufferReadMode = BufferReadMode.LAST_DAYS,
+    /** What happens when a meter without a saved list connects. From Settings. */
+    val newMeterListMode: NewMeterListMode = NewMeterListMode.ASK,
+    /** Another meter's list this meter could use, while it has none of its own. */
+    val reuseCandidate: SavedMeter? = null,
+    /** True while the new-meter question is on screen. */
+    val askReuse: Boolean = false,
 ) {
     fun attribute(obj: CosemObject, attribute: Int): AttributeState = attributes[key(obj, attribute)] ?: AttributeState()
 
@@ -127,7 +134,11 @@ class ObjectBrowserViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
-        ObjectBrowserUiState(decimals = settingsRepository.getDecimals(), bufferReadMode = savedReadMode())
+        ObjectBrowserUiState(
+            decimals = settingsRepository.getDecimals(),
+            bufferReadMode = savedReadMode(),
+            newMeterListMode = savedNewMeterMode(),
+        )
     )
     val uiState: StateFlow<ObjectBrowserUiState> = _uiState.asStateFlow()
 
@@ -147,12 +158,41 @@ class ObjectBrowserViewModel @Inject constructor(
         val state = _uiState.value
         if (serial == state.meterSerial && client == state.client) return
         val stored = if (serial != null && client != null) objectListStore.load(serial, client) else null
+        // A meter new to this phone: offer, copy or read according to Settings.
+        val candidate = if (serial != null && client != null && stored == null) {
+            objectListStore.newestOtherList(serial, client)
+        } else null
+        val mode = state.newMeterListMode
         _uiState.update {
             ObjectBrowserUiState(
                 meterSerial = serial, client = client, objectList = stored,
-                decimals = it.decimals, bufferReadMode = it.bufferReadMode,
+                decimals = it.decimals, bufferReadMode = it.bufferReadMode, newMeterListMode = mode,
+                reuseCandidate = candidate, askReuse = candidate != null && mode == NewMeterListMode.ASK,
             )
         }
+        if (serial == null || client == null || stored != null) return
+        when {
+            mode == NewMeterListMode.READ -> readObjectList()
+            mode == NewMeterListMode.REUSE && candidate != null -> reuseList()
+        }
+    }
+
+    /** Copies the offered list to this meter and shows it. */
+    fun reuseList() {
+        val state = _uiState.value
+        val serial = state.meterSerial ?: return
+        val candidate = state.reuseCandidate ?: return
+        val copy = objectListStore.copy(candidate, serial)
+        _uiState.update {
+            it.copy(objectList = copy, reuseCandidate = null, askReuse = false,
+                listMessage = if (copy == null) "Couldn't copy the object list from ${candidate.serial}" else null)
+        }
+    }
+
+    /** Closes the new-meter question; [read] reads this meter's own list. */
+    fun dismissReuse(read: Boolean) {
+        _uiState.update { it.copy(askReuse = false) }
+        if (read) readObjectList()
     }
 
     // --- Settings ---------------------------------------------------------------
@@ -166,6 +206,14 @@ class ObjectBrowserViewModel @Inject constructor(
         settingsRepository.setBufferReadMode(mode.name)
         _uiState.update { it.copy(bufferReadMode = mode) }
     }
+
+    fun setNewMeterListMode(mode: NewMeterListMode) {
+        settingsRepository.setNewMeterListMode(mode.name)
+        _uiState.update { it.copy(newMeterListMode = mode) }
+    }
+
+    private fun savedNewMeterMode(): NewMeterListMode =
+        NewMeterListMode.entries.firstOrNull { it.name == settingsRepository.getNewMeterListMode() } ?: NewMeterListMode.ASK
 
     private fun savedReadMode(): BufferReadMode =
         BufferReadMode.entries.firstOrNull { it.name == settingsRepository.getBufferReadMode() } ?: BufferReadMode.LAST_DAYS
@@ -214,7 +262,7 @@ class ObjectBrowserViewModel @Inject constructor(
             result.onSuccess { list ->
                 val stored = StoredObjectList(System.currentTimeMillis(), list)
                 objectListStore.save(serial, client, stored)
-                _uiState.update { it.copy(readingList = false, objectList = stored, listMessage = null) }
+                _uiState.update { it.copy(readingList = false, objectList = stored, listMessage = null, reuseCandidate = null) }
             }.onFailure { e ->
                 _uiState.update { it.copy(readingList = false, listMessage = "Couldn't read the object list: ${e.message}") }
             }

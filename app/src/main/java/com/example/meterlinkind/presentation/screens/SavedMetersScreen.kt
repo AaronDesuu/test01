@@ -63,6 +63,7 @@ fun SavedMetersScreen(browserViewModel: ObjectBrowserViewModel, modifier: Modifi
                     supportingContent = {
                         Text(
                             "${meter.client.label} · ${meter.objectCount} objects\nRead " +
+                                (meter.copiedFrom?.let { "from $it " } ?: "") +
                                 DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(meter.readAtMillis))
                         )
                     },

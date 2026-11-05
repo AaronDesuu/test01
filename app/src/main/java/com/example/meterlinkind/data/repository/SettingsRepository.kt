@@ -75,6 +75,13 @@ class SettingsRepository @Inject constructor(
         prefs.edit().putInt("display_decimals", decimals ?: -1).apply()
     }
 
+    /** Name of the [com.example.meterlinkind.data.model.NewMeterListMode] for meters without a saved list. */
+    fun getNewMeterListMode(): String = prefs.getString("new_meter_list_mode", null) ?: "ASK"
+
+    fun setNewMeterListMode(mode: String) {
+        prefs.edit().putString("new_meter_list_mode", mode).apply()
+    }
+
     /** Name of the mode the buffer reader opens with (`BufferReadMode`). */
     fun getBufferReadMode(): String = prefs.getString("buffer_read_mode", null) ?: "LAST_DAYS"
 
