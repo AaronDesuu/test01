@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import javax.inject.Inject
@@ -40,7 +41,12 @@ data class AttributeState(
     val value: DlmsData? = null,
     val error: String? = null,
     val progress: String? = null,
+    /** When [value] was read (phone time, ms); null if never. */
+    val readAt: Long? = null,
 )
+
+/** Progress of "Read all values": [done] of [total] objects; [stopping] after Stop until the current read ends. */
+data class ValuesReadProgress(val done: Int, val total: Int, val stopping: Boolean = false)
 
 /** Which part of a Profile Generic buffer to read, as Gurux offers it. */
 sealed class BufferSelection {
@@ -90,6 +96,8 @@ data class ObjectBrowserUiState(
     /** scaler_unit of Registers read so far; kept across reconnects to the same meter. */
     val scalers: Map<ObisCode, ScalerUnit> = emptyMap(),
     val clockMessage: String? = null,
+    /** Set while a list's values are being read; null otherwise. */
+    val valuesRead: ValuesReadProgress? = null,
     /** Result of the last Disconnect / Reconnect. */
     val relayMessage: String? = null,
     /** Decimal places for floats and scaled values; null = as sent. From Settings. */
@@ -234,6 +242,42 @@ class ObjectBrowserViewModel @Inject constructor(
         }
     }
 
+    private var valuesJob: Job? = null
+    @Volatile private var stopValues = false
+
+    /**
+     * Reads the value (attribute 2) of each of [objects] in turn, with a
+     * Register's scaler_unit when it isn't known yet. Objects whose value this
+     * client can't read are skipped. One run at a time; [stopReadingValues] ends it.
+     */
+    fun readValues(objects: List<CosemObject>) {
+        if (valuesJob?.isActive == true) return
+        val todo = objects.filter { it.canRead(VALUE) }
+        if (todo.isEmpty()) return
+        stopValues = false
+        valuesJob = viewModelScope.launch {
+            try {
+                for ((i, obj) in todo.withIndex()) {
+                    if (stopValues) break
+                    _uiState.update { it.copy(valuesRead = ValuesReadProgress(i, todo.size)) }
+                    readNow(obj, VALUE)
+                }
+            } finally {
+                _uiState.update { it.copy(valuesRead = null) }
+            }
+        }
+    }
+
+    /**
+     * Stops [readValues] once the read in progress has finished. It isn't
+     * cancelled midway: the meter's reply would then arrive as the answer to
+     * the next request.
+     */
+    fun stopReadingValues() {
+        stopValues = true
+        _uiState.update { state -> state.copy(valuesRead = state.valuesRead?.copy(stopping = true)) }
+    }
+
     /** [withScaler]: after a Register value, also read its scaler_unit if unknown (Read all reads it anyway). */
     private suspend fun readNow(obj: CosemObject, attribute: Int, withScaler: Boolean = true): DlmsData? {
         val key = ObjectBrowserUiState.key(obj, attribute)
@@ -241,7 +285,7 @@ class ObjectBrowserViewModel @Inject constructor(
         val result = dlmsRepository.read(obj.attribute(attribute)) { p -> setAttribute(key) { it.copy(progress = p) } }
         setAttribute(key) {
             when (result) {
-                is AttributeRead.Value -> AttributeState(value = result.data)
+                is AttributeRead.Value -> AttributeState(value = result.data, readAt = System.currentTimeMillis())
                 is AttributeRead.Failure -> it.copy(loading = false, progress = null, error = result.message)
             }
         }

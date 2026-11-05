@@ -1,6 +1,17 @@
 package com.example.meterlinkind.presentation.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import com.example.meterlinkind.data.protocol.DlmsData
+import com.example.meterlinkind.presentation.viewmodel.AttributeState
+import com.example.meterlinkind.presentation.viewmodel.ValuesReadProgress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,7 +32,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -123,10 +133,16 @@ fun ObjectListScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
+        val showValues = classId in VALUE_CLASSES
+        val valuesRead = if (showValues) objects.count { browser.attribute(it, ObjectBrowserViewModel.VALUE).value != null } else 0
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "${objects.size} ${InterfaceClass.name(classId)} objects · read " +
-                    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(list.readAtMillis)),
+                buildString {
+                    append("${objects.size} objects")
+                    if (showValues) append(" · $valuesRead read")
+                    append(" · list from ")
+                    append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(list.readAtMillis)))
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
@@ -137,26 +153,178 @@ fun ObjectListScreen(
                 } else {
                     Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
-                Text("  Read again")
+                Text("  Read list again")
             }
         }
         browser.listMessage?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(objects, key = { it.obis.toString() }) { obj ->
-                val obis = obj.obis.toString()
-                ListItem(
-                    headlineContent = { Text(obis, fontFamily = FontFamily.Monospace) },
-                    supportingContent = if (obj.name != obis) {
-                        { Text(obj.name, style = MaterialTheme.typography.bodySmall) }
-                    } else null,
-                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-                    modifier = Modifier.clickable { onOpen(obj) }
+        val online = connection.isDlmsConnected
+        val listState = rememberLazyListState()
+        Box(modifier = Modifier.weight(1f)) {
+            LazyColumn(
+                state = listState,
+                // Room for the read bar, so the last row can scroll above it.
+                contentPadding = PaddingValues(bottom = if (showValues && online) 84.dp else 8.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(objects, key = { it.obis.toString() }) { obj ->
+                    ObjectRow(
+                        obj = obj,
+                        value = if (showValues) browser.attribute(obj, ObjectBrowserViewModel.VALUE) else null,
+                        format = { formatValue(obj.classId, ObjectBrowserViewModel.VALUE, it, browser.scalers[obj.obis], browser.decimals) },
+                        canRead = online && obj.canRead(ObjectBrowserViewModel.VALUE),
+                        onRead = { browserViewModel.read(obj, ObjectBrowserViewModel.VALUE) },
+                        onOpen = { onOpen(obj) },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
+            if (showValues && online && objects.isNotEmpty()) {
+                // Every object in the list (as filtered by the search) whose value this client may read.
+                val readable = remember(objects) { objects.filter { it.canRead(ObjectBrowserViewModel.VALUE) } }
+                ReadValuesBar(
+                    count = readable.size,
+                    progress = browser.valuesRead,
+                    onRead = { browserViewModel.readValues(readable) },
+                    onStop = browserViewModel::stopReadingValues,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp)
                 )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         }
     }
 }
+
+/** Classes whose attribute 2 is a value worth showing in the list. */
+private val VALUE_CLASSES = setOf(
+    InterfaceClass.DATA, InterfaceClass.REGISTER, InterfaceClass.EXTENDED_REGISTER,
+    InterfaceClass.CLOCK, InterfaceClass.DISCONNECT_CONTROL,
+)
+
+/**
+ * One object: name, OBIS code under it, and on the right its last value with
+ * the time it was read, or a Read button. [value] is null for classes that
+ * show no value; the row then ends in an arrow.
+ */
+@Composable
+private fun ObjectRow(
+    obj: CosemObject,
+    value: AttributeState?,
+    format: (DlmsData) -> String,
+    canRead: Boolean,
+    onRead: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val obis = obj.obis.toString()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .padding(start = 4.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                obj.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (obj.name != obis) {
+                Text(
+                    obis,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        when {
+            value == null -> Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+            value.loading -> CircularProgressIndicator(modifier = Modifier.padding(horizontal = 12.dp).size(20.dp), strokeWidth = 2.dp)
+            value.value != null -> Column(
+                horizontalAlignment = Alignment.End,
+                modifier = Modifier.widthIn(max = 170.dp)
+            ) {
+                Text(
+                    format(value.value),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                value.readAt?.let {
+                    Text(
+                        TIME_FORMAT.format(Date(it)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            value.error != null -> TextButton(onClick = onRead, enabled = canRead) {
+                Text("Failed · retry", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
+            }
+            canRead -> TextButton(onClick = onRead) {
+                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(" Read", style = MaterialTheme.typography.labelLarge)
+            }
+            else -> Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+        }
+    }
+}
+
+/** Reads the values of every object in the list; while it runs, shows progress and Stop. */
+@Composable
+private fun ReadValuesBar(
+    count: Int,
+    progress: ValuesReadProgress?,
+    onRead: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val reading = progress != null
+    Surface(
+        onClick = if (reading) onStop else onRead,
+        enabled = reading || count > 0,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        shadowElevation = 6.dp,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (reading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+                Text(
+                    if (progress!!.stopping) "Stopping..." else "Reading ${progress.done + 1} of ${progress.total}",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                if (!progress.stopping) {
+                    Text("Stop", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("Read all values", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                Text(
+                    if (count == 1) "1 object" else "$count objects",
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
+    }
+}
+
+private val TIME_FORMAT = DateFormat.getTimeInstance(DateFormat.MEDIUM)

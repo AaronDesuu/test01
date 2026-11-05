@@ -430,7 +430,8 @@ private fun SetClockCard(meter: String, clockName: String, message: String?, ena
  * Attribute values the way Gurux shows them: OBIS for logical names, columns
  * for capture objects, Register values scaled with their unit.
  */
-private fun formatValue(classId: Int, attribute: Int, data: DlmsData, scaler: ScalerUnit?, decimals: Int?): String = when {
+/** An attribute's value as the browser shows it; also used for the values in the object lists. */
+internal fun formatValue(classId: Int, attribute: Int, data: DlmsData, scaler: ScalerUnit?, decimals: Int?): String = when {
     attribute == 1 && data is DlmsData.OctetString && data.bytes.size == 6 -> ObisCode.of(data.bytes).toString()
     InterfaceClass.hasScaler(classId) && attribute == ObjectBrowserViewModel.VALUE && scaler != null -> scaler.format(data, decimals)
     classId == InterfaceClass.DISCONNECT_CONTROL && attribute == DisconnectControl.OUTPUT_STATE && data is DlmsData.Bool ->
