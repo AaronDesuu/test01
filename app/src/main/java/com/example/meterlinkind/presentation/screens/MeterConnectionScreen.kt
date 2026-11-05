@@ -1,5 +1,9 @@
 package com.example.meterlinkind.presentation.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
@@ -231,10 +235,32 @@ fun MeterConnectionScreen(
                 )
             }
         ) { padding ->
-            val browsedClass = BROWSER_CLASSES[currentScreen]
+            // The page area animates between pages: pages at the same depth cross-fade,
+            // a deeper page slides in from the right, Back slides it out.
+            val slide = with(LocalDensity.current) { PAGE_SLIDE.roundToPx() }
+            AnimatedContent(
+                targetState = Page(currentScreen, openObis),
+                transitionSpec = {
+                    val direction = targetState.depth.compareTo(initialState.depth)
+                    if (direction == 0) {
+                        fadeIn(tween(FADE_MS)).togetherWith(fadeOut(tween(FADE_MS)))
+                    } else {
+                        (slideInHorizontally(tween(PAGE_MS, easing = PAGE_EASING)) { slide * direction } +
+                            fadeIn(tween(PAGE_MS, easing = PAGE_EASING)))
+                            .togetherWith(
+                                slideOutHorizontally(tween(PAGE_MS, easing = PAGE_EASING)) { -slide * direction } +
+                                    fadeOut(tween(FADE_MS))
+                            )
+                    }
+                },
+                label = "page"
+            ) { page ->
+            // Each page draws from its own state, so the one leaving keeps its content.
+            val browsedClass = BROWSER_CLASSES[page.screen]
+            val pageObject = page.obis?.let(browserViewModel::find)
             when {
-                browsedClass != null && openObject != null -> ObjectDetailScreen(
-                    obj = openObject,
+                browsedClass != null && pageObject != null -> ObjectDetailScreen(
+                    obj = pageObject,
                     connectionViewModel = viewModel,
                     browserViewModel = browserViewModel,
                     modifier = Modifier.padding(padding)
@@ -246,19 +272,19 @@ fun MeterConnectionScreen(
                     onOpen = { openObis = it.obis.toString() },
                     modifier = Modifier.padding(padding)
                 )
-                currentScreen == "keys" -> SecurityKeysScreen(
+                page.screen == "keys" -> SecurityKeysScreen(
                     viewModel = viewModel,
                     onDone = { navigate(if (keysFromSettings) "settings" else "home") },
                     modifier = Modifier.padding(padding)
                 )
-                currentScreen == "settings" -> SettingsScreen(
+                page.screen == "settings" -> SettingsScreen(
                     connectionViewModel = viewModel,
                     browserViewModel = browserViewModel,
                     onOpenKeys = { keysFromSettings = true; navigate("keys") },
                     onOpenSavedMeters = { navigate("saved") },
                     modifier = Modifier.padding(padding)
                 )
-                currentScreen == "saved" -> SavedMetersScreen(
+                page.screen == "saved" -> SavedMetersScreen(
                     browserViewModel = browserViewModel,
                     modifier = Modifier.padding(padding)
                 )
@@ -275,9 +301,24 @@ fun MeterConnectionScreen(
                     modifier = Modifier.padding(padding)
                 )
             }
+            }
         }
     }
 }
+
+/** What the page area shows: a route, and the object open in it, if any. */
+private data class Page(val screen: String, val obis: String?) {
+    /** 0 for pages picked from the menu, 1 for pages opened from one of them. */
+    val depth: Int get() = if (obis != null || screen in DEEP_PAGES) 1 else 0
+}
+
+private val DEEP_PAGES = setOf("keys", "saved")
+private const val PAGE_MS = 300
+/** Cross-fade between pages at the same depth. */
+private const val FADE_MS = 200
+private val PAGE_SLIDE = 16.dp
+/** Material's standard easing: a gentle start and a long, soft landing. */
+private val PAGE_EASING = FastOutSlowInEasing
 
 /**
  * Asks, for a meter new to the phone, whether to copy another meter's object
