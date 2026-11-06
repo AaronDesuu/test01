@@ -48,6 +48,12 @@ class DlmsRepository @Inject constructor(
     /** The meter answers within ~0.2 s; a silent one shouldn't hold up a disconnect. */
     private val RELEASE_TIMEOUT_MS = 1000L
 
+    /** AARE application tag. */
+    private val AARE_TAG = 0x61
+
+    /** Late replies [requestAare] skips before giving up on an AARE. */
+    private val MAX_STALE_FRAMES = 3
+
     // Serializes every BLE write+wait sequence across the whole app. DLMS is
     // request/response and the data channel is shared, so two operations in
     // flight at once will scramble framing.
@@ -142,7 +148,7 @@ class DlmsRepository @Inject constructor(
         progress: suspend (String) -> Unit,
     ): String? {
         if (client.mechanism == Mechanism.NONE) {
-            val result = Association.parseResponse(transport.request(Association.publicRequest()))
+            val result = Association.parseResponse(requestAare(Association.publicRequest()))
             Log.d(TAG, "AARE: $result")
             if (!result.accepted) return "Association rejected: ${result.reason}"
             association = result
@@ -160,7 +166,7 @@ class DlmsRepository @Inject constructor(
             clientChallenge ?: security.passwordBytes,
             secure.protect(Association.initiateRequest()),
         )
-        val result = Association.parseResponse(transport.request(aarq), secure)
+        val result = Association.parseResponse(requestAare(aarq), secure)
         Log.d(TAG, "AARE: $result")
         if (!result.accepted) return "Association rejected: ${result.reason}"
         channel = secure
@@ -210,6 +216,22 @@ class DlmsRepository @Inject constructor(
      * with a confirmed-service-error (`0E 01 03 02`, `hrdtushin.c:local_call1`).
      * On that answer, log in again with the same client and keys and retry once.
      */
+    /**
+     * Sends an AARQ and returns the AARE. A reply to an earlier request can still
+     * be on its way when the AARQ goes out (seen after the meter ended a session:
+     * a late GBT block or ciphered GET reply came back instead of the AARE), so
+     * frames that aren't an AARE are skipped.
+     */
+    private suspend fun requestAare(aarq: ByteArray): ByteArray {
+        var reply = transport.request(aarq)
+        repeat(MAX_STALE_FRAMES) {
+            if ((reply.firstOrNull()?.toInt()?.and(0xFF)) == AARE_TAG) return reply
+            Log.w(TAG, "Skipping a stale frame while waiting for the AARE: ${reply.toHex().take(40)}")
+            reply = transport.receive()
+        }
+        return reply
+    }
+
     private suspend fun exchangeInSession(apdu: ByteArray): ByteArray {
         val reply = exchange(apdu)
         if ((reply.firstOrNull()?.toInt()?.and(0xFF)) != ServiceError.TAG_CONFIRMED_SERVICE_ERROR) return reply
