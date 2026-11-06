@@ -1,5 +1,7 @@
 package com.example.meterlinkind.presentation.screens
 
+import com.example.meterlinkind.data.repository.BleConnectionState
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.foundation.clickable
@@ -64,6 +66,7 @@ fun ObjectListScreen(
     connectionViewModel: MeterConnectionViewModel,
     browserViewModel: ObjectBrowserViewModel,
     onOpen: (CosemObject) -> Unit,
+    onConnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val connection by connectionViewModel.uiState.collectAsState()
@@ -84,6 +87,30 @@ fun ObjectListScreen(
     ) {
 
         val list = browser.objectList
+        // The list belongs to a meter, so without one there's nothing to show yet.
+        if (list == null && !connection.isDlmsConnected) {
+            val connecting = connection.connectionState is BleConnectionState.Connecting ||
+                connection.connectionState is BleConnectionState.Connected
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Please connect to the meter", style = MaterialTheme.typography.titleMedium)
+                Button(onClick = onConnect, enabled = !connecting) {
+                    if (connecting) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text("  Connecting...")
+                    } else {
+                        Icon(Icons.Default.Bluetooth, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("  Connect")
+                    }
+                }
+            }
+            return@Column
+        }
         if (list == null) {
             Column(
                 modifier = Modifier
@@ -128,13 +155,16 @@ fun ObjectListScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        val showValues = classId in VALUE_CLASSES
-        val valuesRead = if (showValues) objects.count { browser.attribute(it, ObjectBrowserViewModel.VALUE).value != null } else 0
+        val showValues = classId in ObjectBrowserViewModel.VALUE_CLASSES
+        // Objects with at least one of their list-read attributes read.
+        val valuesRead = objects.count { obj ->
+            ObjectBrowserViewModel.listAttributes(obj).any { browser.attribute(obj, it).value != null }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 buildString {
                     append("${objects.size} objects")
-                    if (showValues) append(" · $valuesRead read")
+                    append(" · $valuesRead read")
                     append(" · list from ")
                     list.copiedFrom?.let { append("$it, ") }
                     append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(list.readAtMillis)))
@@ -162,13 +192,17 @@ fun ObjectListScreen(
             LazyColumn(
                 state = listState,
                 // Room for the read bar under the last row.
-                contentPadding = PaddingValues(bottom = if (showValues && online) 84.dp else 8.dp),
+                contentPadding = PaddingValues(bottom = if (online) 84.dp else 8.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(objects, key = { it.obis.toString() }) { obj ->
+                    val attributes = ObjectBrowserViewModel.listAttributes(obj)
                     ObjectRow(
                         obj = obj,
                         value = if (showValues) browser.attribute(obj, ObjectBrowserViewModel.VALUE) else null,
+                        attributesRead = attributes.count { browser.attribute(obj, it).value != null },
+                        attributesTotal = attributes.size,
+                        attributesLoading = attributes.any { browser.attribute(obj, it).loading },
                         format = { formatValue(obj.classId, ObjectBrowserViewModel.VALUE, it, browser.scalers[obj.obis], browser.decimals) },
                         canRead = online && obj.canRead(ObjectBrowserViewModel.VALUE),
                         onRead = { browserViewModel.read(obj, ObjectBrowserViewModel.VALUE) },
@@ -177,9 +211,9 @@ fun ObjectListScreen(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
-            if (showValues && online && objects.isNotEmpty()) {
-                // The objects in the (filtered) list whose value this client may read.
-                val readable = remember(objects) { objects.filter { it.canRead(ObjectBrowserViewModel.VALUE) } }
+            // The objects in the (filtered) list with something this client may read.
+            val readable = remember(objects) { objects.filter { ObjectBrowserViewModel.listAttributes(it).isNotEmpty() } }
+            if (online && readable.isNotEmpty()) {
                 ReadValuesBar(
                     count = readable.size,
                     progress = browser.valuesRead,
@@ -194,21 +228,18 @@ fun ObjectListScreen(
     }
 }
 
-/** Classes whose attribute 2 is a value worth showing in the list. */
-private val VALUE_CLASSES = setOf(
-    InterfaceClass.DATA, InterfaceClass.REGISTER, InterfaceClass.EXTENDED_REGISTER,
-    InterfaceClass.CLOCK, InterfaceClass.DISCONNECT_CONTROL,
-)
-
 /**
  * One object: name, OBIS code under it, and on the right its last value with
  * the time it was read, or a Read button. [value] is null for classes that
- * show no value; the row then ends in an arrow.
+ * show no value; the row then shows how many attributes were read, and an arrow.
  */
 @Composable
 private fun ObjectRow(
     obj: CosemObject,
     value: AttributeState?,
+    attributesRead: Int,
+    attributesTotal: Int,
+    attributesLoading: Boolean,
     format: (DlmsData) -> String,
     canRead: Boolean,
     onRead: () -> Unit,
@@ -241,7 +272,17 @@ private fun ObjectRow(
             }
         }
         when {
-            value == null -> Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+            value == null -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    attributesLoading -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    attributesRead > 0 -> Text(
+                        "$attributesRead of $attributesTotal read",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+            }
             value.loading -> CircularProgressIndicator(modifier = Modifier.padding(horizontal = 12.dp).size(20.dp), strokeWidth = 2.dp)
             value.value != null -> Column(
                 horizontalAlignment = Alignment.End,

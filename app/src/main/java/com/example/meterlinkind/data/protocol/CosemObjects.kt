@@ -30,7 +30,17 @@ object InterfaceClass {
     const val EXTENDED_REGISTER = 4
     const val PROFILE_GENERIC = 7
     const val CLOCK = 8
+    const val SCRIPT_TABLE = 9
+    const val SPECIAL_DAYS_TABLE = 11
     const val ASSOCIATION_LN = 15
+    const val IMAGE_TRANSFER = 18
+    const val SINGLE_ACTION_SCHEDULE = 22
+    const val IEC_HDLC_SETUP = 23
+    const val PUSH_SETUP = 40
+    const val TCP_UDP_SETUP = 41
+    const val GPRS_MODEM_SETUP = 45
+    const val IPV6_SETUP = 48
+    const val SECURITY_SETUP = 64
     const val DISCONNECT_CONTROL = 70
     const val LIMITER = 71
 
@@ -52,6 +62,38 @@ object InterfaceClass {
             "logical_name", "time", "time_zone", "status", "daylight_savings_begin",
             "daylight_savings_end", "daylight_savings_deviation", "daylight_savings_enabled", "clock_base",
         ),
+        SCRIPT_TABLE to listOf("logical_name", "scripts"),
+        SPECIAL_DAYS_TABLE to listOf("logical_name", "entries"),
+        // Version 1, as the FT5AB serves it (version 2 adds user_list and current_user).
+        ASSOCIATION_LN to listOf(
+            "logical_name", "object_list", "associated_partners_id", "application_context_name",
+            "xDLMS_context_info", "authentication_mechanism_name", "secret", "association_status",
+            "security_setup_reference",
+        ),
+        IMAGE_TRANSFER to listOf(
+            "logical_name", "image_block_size", "image_transferred_blocks_status",
+            "image_first_not_transferred_block_number", "image_transfer_enabled", "image_transfer_status",
+            "image_to_activate_info",
+        ),
+        SINGLE_ACTION_SCHEDULE to listOf("logical_name", "executed_script", "type", "execution_time"),
+        IEC_HDLC_SETUP to listOf(
+            "logical_name", "comm_speed", "window_size_transmit", "window_size_receive",
+            "max_info_field_length_transmit", "max_info_field_length_receive", "inter_octet_time_out",
+            "inactivity_time_out", "device_address",
+        ),
+        PUSH_SETUP to listOf(
+            "logical_name", "push_object_list", "send_destination_and_method", "communication_window",
+            "randomisation_start_interval", "number_of_retries", "repetition_delay",
+        ),
+        TCP_UDP_SETUP to listOf("logical_name", "TCP-UDP_port", "IP_reference", "MSS", "nb_of_sim_conn", "inactivity_time_out"),
+        GPRS_MODEM_SETUP to listOf("logical_name", "APN", "PIN_code", "quality_of_service"),
+        IPV6_SETUP to listOf(
+            "logical_name", "DL_reference", "address_config_mode", "unicast_IPv6_addresses",
+            "multicast_IPv6_addresses", "gateway_IPv6_addresses", "primary_DNS_address",
+            "secondary_DNS_address", "traffic_class", "neighbor_discovery_setup",
+        ),
+        // Version 0, as the FT5AB serves it (version 1 adds certificates).
+        SECURITY_SETUP to listOf("logical_name", "security_policy", "security_suite", "client_system_title", "server_system_title"),
     )
 
     fun name(classId: Int): String = when (classId) {
@@ -60,7 +102,17 @@ object InterfaceClass {
         EXTENDED_REGISTER -> "Extended Register"
         PROFILE_GENERIC -> "Profile Generic"
         CLOCK -> "Clock"
+        SCRIPT_TABLE -> "Script Table"
+        SPECIAL_DAYS_TABLE -> "Special Days Table"
         ASSOCIATION_LN -> "Association LN"
+        IMAGE_TRANSFER -> "Image Transfer"
+        SINGLE_ACTION_SCHEDULE -> "Action Schedule"
+        IEC_HDLC_SETUP -> "IEC HDLC Setup"
+        PUSH_SETUP -> "Push Setup"
+        TCP_UDP_SETUP -> "TCP-UDP Setup"
+        GPRS_MODEM_SETUP -> "GPRS Setup"
+        IPV6_SETUP -> "IPv6 Setup"
+        SECURITY_SETUP -> "Security Setup"
         DISCONNECT_CONTROL -> "Disconnect Control"
         LIMITER -> "Limiter"
         else -> "Class $classId"

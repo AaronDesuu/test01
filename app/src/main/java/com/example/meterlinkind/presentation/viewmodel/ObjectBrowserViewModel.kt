@@ -3,6 +3,7 @@ package com.example.meterlinkind.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.meterlinkind.data.model.NewMeterListMode
+import com.example.meterlinkind.data.protocol.Axdr
 import com.example.meterlinkind.data.protocol.CaptureObject
 import com.example.meterlinkind.data.protocol.ClientProfile
 import com.example.meterlinkind.data.protocol.ClockValue
@@ -45,6 +46,9 @@ data class AttributeState(
     /** When [value] was read (phone time, ms); null if never. */
     val readAt: Long? = null,
 )
+
+/** A write from the edit dialog: [key] as in [ObjectBrowserUiState.key]; [error] null once written. */
+data class AttributeWrite(val key: String, val busy: Boolean, val error: String? = null)
 
 /** Progress of "Read all values": [done] of [total] objects; [stopping] after Stop until the current read ends. */
 data class ValuesReadProgress(val done: Int, val total: Int, val stopping: Boolean = false)
@@ -97,6 +101,8 @@ data class ObjectBrowserUiState(
     /** scaler_unit of Registers read so far; kept across reconnects to the same meter. */
     val scalers: Map<ObisCode, ScalerUnit> = emptyMap(),
     val clockMessage: String? = null,
+    /** The write in progress or last finished, for the edit dialog. */
+    val write: AttributeWrite? = null,
     /** Set while a list's values are being read; null otherwise. */
     val valuesRead: ValuesReadProgress? = null,
     /** Result of the last Disconnect / Reconnect. */
@@ -293,13 +299,14 @@ class ObjectBrowserViewModel @Inject constructor(
     @Volatile private var stopValues = false
 
     /**
-     * Reads the value (attribute 2) of each of [objects] in turn, with a
-     * Register's scaler_unit when it isn't known yet. Objects whose value this
-     * client can't read are skipped. One run at a time; [stopReadingValues] ends it.
+     * Reads [listAttributes] of each of [objects] in turn: the value (with a
+     * Register's scaler_unit when it isn't known yet) for classes that have
+     * one, every other readable attribute otherwise. Objects with nothing to
+     * read are skipped. One run at a time; [stopReadingValues] ends it.
      */
     fun readValues(objects: List<CosemObject>) {
         if (valuesJob?.isActive == true) return
-        val todo = objects.filter { it.canRead(VALUE) }
+        val todo = objects.filter { listAttributes(it).isNotEmpty() }
         if (todo.isEmpty()) return
         stopValues = false
         valuesJob = viewModelScope.launch {
@@ -307,7 +314,14 @@ class ObjectBrowserViewModel @Inject constructor(
                 for ((i, obj) in todo.withIndex()) {
                     if (stopValues) break
                     _uiState.update { it.copy(valuesRead = ValuesReadProgress(i, todo.size)) }
-                    readNow(obj, VALUE)
+                    if (obj.classId in VALUE_CLASSES) {
+                        readNow(obj, VALUE)
+                    } else {
+                        for (attribute in listAttributes(obj)) {
+                            if (stopValues) break
+                            readNow(obj, attribute, withScaler = false)
+                        }
+                    }
                 }
             } finally {
                 _uiState.update { it.copy(valuesRead = null) }
@@ -437,6 +451,23 @@ class ObjectBrowserViewModel @Inject constructor(
      * Sets [clock]'s time to the phone's local time. Keeps the deviation the
      * meter reported in its last time reading, if any.
      */
+    /**
+     * Writes [value] (the new value, of the type read from the meter) to one
+     * attribute, then reads it back so the page shows what the meter now holds.
+     */
+    fun writeAttribute(obj: CosemObject, attribute: Int, value: DlmsData) {
+        val key = ObjectBrowserUiState.key(obj, attribute)
+        if (_uiState.value.write?.let { it.key == key && it.busy } == true) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(write = AttributeWrite(key, busy = true)) }
+            val error = dlmsRepository.write(obj.attribute(attribute), Axdr.encode(value))
+            if (error == null) readNow(obj, attribute, withScaler = false)
+            _uiState.update { it.copy(write = AttributeWrite(key, busy = false, error = error)) }
+        }
+    }
+
+    fun clearWrite() = _uiState.update { it.copy(write = null) }
+
     fun setClockToPhoneTime(clock: CosemObject) {
         viewModelScope.launch {
             _uiState.update { it.copy(clockMessage = "Setting clock...") }
@@ -461,6 +492,31 @@ class ObjectBrowserViewModel @Inject constructor(
 
     companion object {
         const val VALUE = 2
+
+        /** Classes whose attribute 2 is the one value worth showing in a list. */
+        val VALUE_CLASSES = setOf(
+            InterfaceClass.DATA, InterfaceClass.REGISTER, InterfaceClass.EXTENDED_REGISTER,
+            InterfaceClass.CLOCK, InterfaceClass.DISCONNECT_CONTROL,
+        )
+
+        /**
+         * Attributes "Read all values" reads for [obj]: its value for [VALUE_CLASSES],
+         * otherwise every attribute this client may read except logical_name and the
+         * ones too big for a list-wide read (a Profile Generic buffer, Association LN's
+         * object_list, about 18 s each); logical_name alone when nothing else is readable.
+         */
+        fun listAttributes(obj: CosemObject): List<Int> {
+            if (obj.classId in VALUE_CLASSES) return if (obj.canRead(VALUE)) listOf(VALUE) else emptyList()
+            val heavy = when (obj.classId) {
+                InterfaceClass.PROFILE_GENERIC -> setOf(BUFFER)
+                InterfaceClass.ASSOCIATION_LN -> setOf(2)
+                else -> emptySet()
+            }
+            val readable = (2..InterfaceClass.attributeCount(obj.classId)).filter { it !in heavy && obj.canRead(it) }
+            // Some objects allow nothing but logical_name (the FT5AB's Script Tables refuse
+            // scripts to US and MR); reading that at least shows the object answers.
+            return readable.ifEmpty { if (obj.canRead(1)) listOf(1) else emptyList() }
+        }
         const val RELAY_SETTLE_MS = 3000L
         const val SCALER_UNIT = 3
         const val BUFFER = 2

@@ -1,5 +1,7 @@
 package com.example.meterlinkind.presentation.screens
 
+import androidx.compose.ui.draw.alpha
+import com.example.meterlinkind.presentation.components.DISABLED_ALPHA
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -189,7 +191,6 @@ fun MeterConnectionScreen(
             AppDrawer(
                 currentRoute = currentScreen,
                 navigate = navigate,
-                logout = viewModel::logout,
                 connect = connect,
                 closeDrawer = { scope.launch { drawerState.slideClosed() } },
                 connectionViewModel = viewModel
@@ -270,6 +271,7 @@ fun MeterConnectionScreen(
                     connectionViewModel = viewModel,
                     browserViewModel = browserViewModel,
                     onOpen = { openObis = it.obis.toString() },
+                    onConnect = connect,
                     modifier = Modifier.padding(padding)
                 )
                 page.screen == "keys" -> SecurityKeysScreen(
@@ -422,6 +424,16 @@ private val BROWSER_CLASSES = mapOf(
     "disconnect" to InterfaceClass.DISCONNECT_CONTROL,
     "limiter" to InterfaceClass.LIMITER,
     "clock" to InterfaceClass.CLOCK,
+    "script" to InterfaceClass.SCRIPT_TABLE,
+    "specialdays" to InterfaceClass.SPECIAL_DAYS_TABLE,
+    "association" to InterfaceClass.ASSOCIATION_LN,
+    "actionschedule" to InterfaceClass.SINGLE_ACTION_SCHEDULE,
+    "hdlc" to InterfaceClass.IEC_HDLC_SETUP,
+    "push" to InterfaceClass.PUSH_SETUP,
+    "tcpudp" to InterfaceClass.TCP_UDP_SETUP,
+    "gprs" to InterfaceClass.GPRS_MODEM_SETUP,
+    "ipv6" to InterfaceClass.IPV6_SETUP,
+    "security" to InterfaceClass.SECURITY_SETUP,
 )
 
 /** Window for the second Back on Home that leaves the app. */
@@ -442,7 +454,7 @@ private fun getScreenTitle(screen: String): String = when (screen) {
     "settings" -> "Settings"
     "saved" -> "Saved meters"
     "keys" -> "Security Keys"
-    else -> "Meter Link"
+    else -> OBJECT_ENTRIES.firstOrNull { it.route == screen }?.label ?: "Meter Link"
 }
 
 @SuppressLint("MissingPermission")
@@ -773,6 +785,7 @@ fun HomeContent(
                                                 title = entry.label,
                                                 icon = entry.icon,
                                                 onClick = { onNavigate(entry.route) },
+                                                enabled = entry.enabled,
                                                 modifier = Modifier.weight(1f)
                                             )
                                         }
@@ -832,12 +845,16 @@ fun QuickActionCard(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
     contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer
 ) {
     ElevatedCard(
         onClick = onClick,
-        modifier = modifier.height(104.dp),
+        enabled = enabled,
+        modifier = modifier
+            .height(104.dp)
+            .alpha(if (enabled) 1f else DISABLED_ALPHA),
         colors = CardDefaults.elevatedCardColors(
             containerColor = containerColor
         )
