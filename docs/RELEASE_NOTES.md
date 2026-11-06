@@ -12,7 +12,7 @@ The first build for testing. Meter Link reads and sets up FT5AB meters over Blue
 - **Connect** by scanning for nearby FT5AB meters. Signal strength shows next to each meter. Once you're connected, the meter's name stays at the top right of every page.
 - **Browse the meter's objects** the way Gurux shows them: 17 object types, including Data, Register, Profile Generic, Clock and Disconnect Control. The object list comes from the meter itself. Reading it takes about 20 seconds the first time; after that the app keeps it, and another FT5AB can reuse it.
 - **Read values** one at a time, or all of them with Read all values. Profiles (load survey, billing and so on) can be read by entry number, by the last few days, between two dates, or in full.
-- **Change values.** Any attribute your login may write has a pencil. You see what will be written before it's sent, and the app reads it back afterwards. The clock can be set from the phone's time.
+- **Change values.** Any attribute your login may write has a pencil. Each kind of value gets its own input: − and + for numbers, date and time pickers for the clock, On/Off for switches. Settings made of several parts, like the relay time setting or an action schedule, are edited one field at a time, or as hex if you prefer. Before anything is sent you see the old and new value side by side, and afterwards the app reads it back from the meter.
 - **Keys stay on the phone.** Security keys are saved encrypted and left out of Google backups, so on a new phone you enter them again.
 - **Tutorial** in English and Japanese. It opens on first launch and stays in Settings › About.
 
@@ -32,7 +32,7 @@ The first build for testing. Meter Link reads and sets up FT5AB meters over Blue
 - **メーターにつなぐ**：近くのFT5ABを探して選ぶだけです。各メーターの横に電波の強さが出ます。つながっている間は、どの画面でも右上にメーター名が出ます。
 - **オブジェクトを見る**：Guruxと同じ並びで、Data、Register、Profile Generic、Clock、Disconnect Controlなど17種類に対応しています。オブジェクトリストはメーターから直接読み込みます。初回は20秒ほどかかりますが、2回目からは保存したリストを使います。別のFT5ABでも使い回せます。
 - **値を読む**：1件ずつでも、「Read all values」でまとめてでも読めます。Profile（ロードサーベイや請求データなど）は、件数指定・直近の日数・日時の範囲・全件から読み方を選べます。
-- **値を書き換える**：書き込める属性には鉛筆マークが付きます。送信前に書き込む内容を確認でき、送信後はアプリが読み直すので、実際に入った値が分かります。時計はスマホの時刻に合わせられます。
+- **値を書き換える**：書き込める属性には鉛筆マークが付きます。入力は値の種類に合わせて変わります。数値は−と＋、時計は日付と時刻のピッカー、スイッチはOn/Offです。リレー時間設定やAction Scheduleのように複数の項目からなる設定は、1項目ずつ（または16進数でまとめて）編集できます。送信前に今の値と新しい値を並べて確認でき、送信後はアプリがメーターから読み直します。
 - **キーはスマホの中だけに**：セキュリティキーは暗号化して保存し、Googleのバックアップには含めません。機種変更したときは、キーを入力し直してください。
 - **チュートリアル**：英語と日本語に対応。初回起動時に開き、あとから「Settings › About」でも見られます。
 

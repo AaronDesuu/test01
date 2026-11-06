@@ -115,6 +115,22 @@ class ValueEditor(
             }
         }
 
+        /** A logical name (6-byte octet-string) as an OBIS code, 0.0.10.0.100.255. */
+        fun forObis(bytes: ByteArray): ValueEditor = ValueEditor(
+            "OBIS code (octet-string)",
+            bytes.joinToString(".") { (it.toInt() and 0xFF).toString() },
+            Kind.TEXT,
+            "Six numbers 0 to 255, like 0.0.10.0.100.255",
+        ) { text ->
+            val parts = text.split('.')
+            require(parts.size == 6) { "Six numbers separated by dots" }
+            DlmsData.OctetString(ByteArray(6) { i ->
+                val n = parts[i].trim().toIntOrNull()
+                require(n != null && n in 0..255) { "Each number must be 0 to 255" }
+                n.toByte()
+            })
+        }
+
         /** For a write-only attribute: its type is unknown, so the whole value is typed as A-XDR hex. */
         fun forUnknown(): ValueEditor = ValueEditor(
             "Encoded value in hex",
