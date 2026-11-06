@@ -1,5 +1,6 @@
 package com.example.meterlinkind.presentation.screens
 
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -128,7 +129,30 @@ private fun AttributesTab(
     modifier: Modifier,
 ) {
     val online = connection.isDlmsConnected
-    val (readable, unreadable) = (1..InterfaceClass.attributeCount(obj.classId)).partition { obj.canRead(it) }
+    // Write-only attributes stay in the main list so they can be edited.
+    val (readable, unreadable) = (1..InterfaceClass.attributeCount(obj.classId)).partition { obj.canRead(it) || obj.canWrite(it) }
+    // logical_name is never changed, and the buffer is written by the meter itself.
+    val editable = { attribute: Int ->
+        attribute != 1 && obj.canWrite(attribute) && !(obj.classId == InterfaceClass.PROFILE_GENERIC && attribute == ObjectBrowserViewModel.BUFFER)
+    }
+    var editing by rememberSaveable(obj.obis.toString()) { mutableStateOf<Int?>(null) }
+    val meterName = connection.serialNumber ?: connection.selectedDeviceName ?: "the meter"
+    editing?.let { attribute ->
+        val key = ObjectBrowserUiState.key(obj, attribute)
+        EditAttributeDialog(
+            objectName = "${obj.name} · ${obj.obis}",
+            attributeName = InterfaceClass.attributeName(obj.classId, attribute),
+            meter = meterName,
+            state = browser.attribute(obj, attribute),
+            readable = obj.canRead(attribute),
+            scaler = if (InterfaceClass.hasScaler(obj.classId) && attribute == ObjectBrowserViewModel.VALUE) browser.scalers[obj.obis] else null,
+            write = browser.write?.takeIf { it.key == key },
+            format = { formatValue(obj.classId, attribute, it, browser.scalers[obj.obis], browser.decimals) },
+            onRead = { browserViewModel.read(obj, attribute) },
+            onWrite = { browserViewModel.writeAttribute(obj, attribute, it) },
+            onDismiss = { editing = null; browserViewModel.clearWrite() },
+        )
+    }
     // Attributes this client can't read stay folded away under one row.
     var showUnreadable by rememberSaveable(obj.obis.toString()) { mutableStateOf(false) }
     val accessOf = { attribute: Int -> obj.attributeAccess?.let { AccessMode.label(it[attribute] ?: AccessMode.NONE) } }
@@ -160,14 +184,23 @@ private fun AttributesTab(
                     note = "Read it in the Buffer tab", enabled = false,
                 ) {}
             } else {
+                val canRead = obj.canRead(attribute)
                 AttributeRow(
                     attribute = attribute,
                     name = InterfaceClass.attributeName(obj.classId, attribute),
                     access = accessOf(attribute),
-                    state = browser.attribute(obj, attribute),
+                    state = if (canRead) browser.attribute(obj, attribute) else null,
+                    note = if (canRead) null else "Write only",
                     enabled = online,
                     format = { formatValue(obj.classId, attribute, it, browser.scalers[obj.obis], browser.decimals) },
                     onRead = { browserViewModel.read(obj, attribute) },
+                    onEdit = if (online && editable(attribute)) {
+                        {
+                            browserViewModel.clearWrite()
+                            if (canRead && browser.attribute(obj, attribute).value == null) browserViewModel.read(obj, attribute)
+                            editing = attribute
+                        }
+                    } else null,
                 )
             }
         }
@@ -228,6 +261,8 @@ private fun AttributeRow(
     note: String? = null,
     enabled: Boolean,
     format: (DlmsData) -> String = { it.display() },
+    /** Opens the editor; null when this client can't change the attribute. */
+    onEdit: (() -> Unit)? = null,
     onRead: () -> Unit,
 ) {
     Surface(
@@ -260,6 +295,11 @@ private fun AttributeRow(
                     }
                     state.progress != null -> Text(state.progress, style = MaterialTheme.typography.bodySmall)
                     else -> Text("Not read", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            onEdit?.let {
+                IconButton(onClick = it) {
+                    Icon(Icons.Default.Edit, contentDescription = "Change $name")
                 }
             }
             if (state != null) {
