@@ -1,5 +1,6 @@
 package com.example.meterlinkind.presentation.screens
 
+import androidx.compose.material.icons.filled.School
 import com.example.meterlinkind.presentation.components.RoleBadge
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.foundation.clickable
@@ -63,6 +64,7 @@ fun SettingsScreen(
     browserViewModel: ObjectBrowserViewModel,
     onOpenKeys: () -> Unit,
     onOpenSavedMeters: () -> Unit,
+    onOpenTutorial: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val connection by connectionViewModel.uiState.collectAsState()
@@ -133,6 +135,8 @@ fun SettingsScreen(
 
         SectionTitle("About")
         SettingsCard {
+            NavRow(Icons.Default.School, "Tutorial", "How to use Meter Link", onOpenTutorial)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             SettingRow(Icons.Default.Info, "Version", version, onClick = null) {}
         }
 

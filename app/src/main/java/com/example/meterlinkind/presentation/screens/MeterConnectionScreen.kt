@@ -107,6 +107,24 @@ fun MeterConnectionScreen(
     val connection by viewModel.uiState.collectAsState()
     val loggedInClient = connection.client
 
+    // The first time the app opens, the tutorial comes before the login screen.
+    var tutorialSeen by rememberSaveable { mutableStateOf(viewModel.isTutorialSeen()) }
+    if (!tutorialSeen) {
+        Scaffold { padding ->
+            TutorialScreen(
+                firstLaunch = true,
+                initialLanguage = viewModel.getTutorialLanguage(),
+                onLanguageChange = viewModel::setTutorialLanguage,
+                onFinish = {
+                    viewModel.setTutorialSeen()
+                    tutorialSeen = true
+                },
+                modifier = Modifier.padding(padding)
+            )
+        }
+        return
+    }
+
     if (loggedInClient == null) {
         // After login, open the keys first so they can be checked before connecting.
         LoginScreen(onLogin = { user, pass ->
@@ -284,6 +302,14 @@ fun MeterConnectionScreen(
                     browserViewModel = browserViewModel,
                     onOpenKeys = { keysFromSettings = true; navigate("keys") },
                     onOpenSavedMeters = { navigate("saved") },
+                    onOpenTutorial = { navigate("tutorial") },
+                    modifier = Modifier.padding(padding)
+                )
+                page.screen == "tutorial" -> TutorialScreen(
+                    firstLaunch = false,
+                    initialLanguage = viewModel.getTutorialLanguage(),
+                    onLanguageChange = viewModel::setTutorialLanguage,
+                    onFinish = { navigate("settings") },
                     modifier = Modifier.padding(padding)
                 )
                 page.screen == "saved" -> SavedMetersScreen(
@@ -314,7 +340,7 @@ private data class Page(val screen: String, val obis: String?) {
     val depth: Int get() = if (obis != null || screen in DEEP_PAGES) 1 else 0
 }
 
-private val DEEP_PAGES = setOf("keys", "saved")
+private val DEEP_PAGES = setOf("keys", "saved", "tutorial")
 private const val PAGE_MS = 300
 /** Cross-fade between pages at the same depth. */
 private const val FADE_MS = 200
@@ -440,7 +466,7 @@ private val BROWSER_CLASSES = mapOf(
 private const val EXIT_CONFIRM_MS = 2000L
 
 /** Pages reached from Settings, and where Back takes them. */
-private val SUB_PAGES = mapOf("saved" to "settings", "keys" to "settings")
+private val SUB_PAGES = mapOf("saved" to "settings", "keys" to "settings", "tutorial" to "settings")
 
 private fun getScreenTitle(screen: String): String = when (screen) {
     "home" -> "Meter Link"
@@ -454,6 +480,7 @@ private fun getScreenTitle(screen: String): String = when (screen) {
     "settings" -> "Settings"
     "saved" -> "Saved meters"
     "keys" -> "Security Keys"
+    "tutorial" -> "Tutorial"
     else -> OBJECT_ENTRIES.firstOrNull { it.route == screen }?.label ?: "Meter Link"
 }
 

@@ -62,12 +62,22 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    /**
-     * Our invocation counter, the second half of every GCM IV. One counter for
-     * all clients: they share the system title and may share a key, so separate
-     * counters would reuse an IV under the same key. Never repeats, also across
-     * app restarts.
-     */
+    /** True once the tutorial was finished or skipped; it then no longer opens by itself. */
+    fun isTutorialSeen(): Boolean = prefs.getBoolean("tutorial_seen", false)
+
+    fun setTutorialSeen() {
+        prefs.edit().putBoolean("tutorial_seen", true).apply()
+    }
+
+    /** Tutorial language, "en" or "ja". Until one is picked, Japanese on a Japanese phone. */
+    fun getTutorialLanguage(): String =
+        prefs.getString("tutorial_language", null)
+            ?: if (java.util.Locale.getDefault().language == "ja") "ja" else "en"
+
+    fun setTutorialLanguage(code: String) {
+        prefs.edit().putString("tutorial_language", code).apply()
+    }
+
     /** Decimal places floats are shown with; null = as the meter sent them. Default 2. */
     fun getDecimals(): Int? = prefs.getInt("display_decimals", 2).takeIf { it >= 0 }
 
@@ -107,6 +117,12 @@ class SettingsRepository @Inject constructor(
         prefs.edit().remove("session_client").remove("session_last_active").apply()
     }
 
+    /**
+     * Our invocation counter, the second half of every GCM IV. One counter for
+     * all clients: they share the system title and may share a key, so separate
+     * counters would reuse an IV under the same key. Never repeats, also across
+     * app restarts.
+     */
     @Synchronized
     fun nextFrameCounter(): Long {
         val next = (prefs.getLong("frame_counter", 0L) + 1) and 0xFFFFFFFFL

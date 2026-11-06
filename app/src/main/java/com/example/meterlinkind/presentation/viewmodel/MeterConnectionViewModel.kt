@@ -67,6 +67,14 @@ class MeterConnectionViewModel @Inject constructor(
      * Call when the app comes to the foreground: logs out if it sat unused
      * for too long, otherwise counts as activity.
      */
+    fun isTutorialSeen(): Boolean = settingsRepository.isTutorialSeen()
+
+    fun setTutorialSeen() = settingsRepository.setTutorialSeen()
+
+    fun getTutorialLanguage(): String = settingsRepository.getTutorialLanguage()
+
+    fun setTutorialLanguage(code: String) = settingsRepository.setTutorialLanguage(code)
+
     fun onAppResumed() {
         val client = _uiState.value.client ?: return
         val session = settingsRepository.getSession()
