@@ -66,6 +66,92 @@ object Axdr {
     /** Decodes exactly one `Data` value starting at [offset]. */
     fun decode(buf: ByteArray, offset: Int = 0): DlmsData = Reader(buf, offset).readData()
 
+    /** Decodes [buf] as one `Data` value and nothing more; throws if bytes are left over. */
+    fun decodeWhole(buf: ByteArray): DlmsData {
+        val reader = Reader(buf)
+        val data = reader.readData()
+        if (reader.remaining != 0) throw AxdrException("${reader.remaining} bytes left after the value")
+        return data
+    }
+
+    /** Encodes one `Data` value; [decode] reads it back unchanged. */
+    fun encode(data: DlmsData): ByteArray = java.io.ByteArrayOutputStream().also { write(it, data) }.toByteArray()
+
+    private fun write(out: java.io.ByteArrayOutputStream, data: DlmsData) {
+        fun bytes(b: ByteArray) = out.write(b, 0, b.size)
+        fun number(value: Long, size: Int) = repeat(size) { out.write((value shr (8 * (size - 1 - it))).toInt() and 0xFF) }
+        when (data) {
+            DlmsData.Null -> out.write(TAG_NULL)
+            is DlmsData.Bool -> { out.write(TAG_BOOLEAN); out.write(if (data.value) 1 else 0) }
+            is DlmsData.BitString -> { out.write(TAG_BIT_STRING); bytes(encodeLength(data.bitCount)); bytes(data.bytes) }
+            is DlmsData.Integer -> { out.write(data.tag); number(data.value, integerSize(data.tag)) }
+            is DlmsData.Enum -> { out.write(TAG_ENUM); out.write(data.value and 0xFF) }
+            is DlmsData.Float -> if (data.singlePrecision) {
+                out.write(TAG_FLOAT32); number(java.lang.Float.floatToIntBits(data.value.toFloat()).toLong(), 4)
+            } else {
+                out.write(TAG_FLOAT64); number(java.lang.Double.doubleToLongBits(data.value), 8)
+            }
+            is DlmsData.OctetString -> { out.write(TAG_OCTET_STRING); bytes(encodeLength(data.bytes.size)); bytes(data.bytes) }
+            is DlmsData.VisibleString -> data.value.toByteArray(Charsets.US_ASCII).let {
+                out.write(TAG_VISIBLE_STRING); bytes(encodeLength(it.size)); bytes(it)
+            }
+            is DlmsData.Utf8String -> data.value.toByteArray(Charsets.UTF_8).let {
+                out.write(TAG_UTF8_STRING); bytes(encodeLength(it.size)); bytes(it)
+            }
+            is DlmsData.Bcd -> { out.write(TAG_BCD); bytes(data.bytes) }
+            // date-time, date and time all decode to DateTime; their size tells them apart.
+            is DlmsData.DateTime -> {
+                out.write(when (data.bytes.size) { 5 -> TAG_DATE; 4 -> TAG_TIME; else -> TAG_DATE_TIME })
+                bytes(data.bytes)
+            }
+            is DlmsData.Array -> { out.write(TAG_ARRAY); bytes(encodeLength(data.items.size)); data.items.forEach { write(out, it) } }
+            is DlmsData.Structure -> { out.write(TAG_STRUCTURE); bytes(encodeLength(data.items.size)); data.items.forEach { write(out, it) } }
+        }
+    }
+
+    /** Bytes of an integer type on the wire. */
+    fun integerSize(tag: Int): Int = when (tag) {
+        TAG_INT8, TAG_UINT8 -> 1
+        TAG_INT16, TAG_UINT16 -> 2
+        TAG_INT32, TAG_UINT32 -> 4
+        TAG_INT64, TAG_UINT64 -> 8
+        else -> throw AxdrException("Not an integer tag: $tag")
+    }
+
+    /** Values an integer type can hold (unsigned 64-bit is limited to Long's range). */
+    fun integerRange(tag: Int): LongRange = when (tag) {
+        TAG_INT8 -> Byte.MIN_VALUE.toLong()..Byte.MAX_VALUE.toLong()
+        TAG_INT16 -> Short.MIN_VALUE.toLong()..Short.MAX_VALUE.toLong()
+        TAG_INT32 -> Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()
+        TAG_INT64 -> Long.MIN_VALUE..Long.MAX_VALUE
+        TAG_UINT8 -> 0L..0xFFL
+        TAG_UINT16 -> 0L..0xFFFFL
+        TAG_UINT32 -> 0L..0xFFFF_FFFFL
+        TAG_UINT64 -> 0L..Long.MAX_VALUE
+        else -> throw AxdrException("Not an integer tag: $tag")
+    }
+
+    /** The A-XDR name of a value's type, as Gurux shows it. */
+    fun typeName(data: DlmsData): String = when (data) {
+        DlmsData.Null -> "null-data"
+        is DlmsData.Bool -> "boolean"
+        is DlmsData.BitString -> "bit-string"
+        is DlmsData.Integer -> when (data.tag) {
+            TAG_INT8 -> "integer"; TAG_INT16 -> "long"; TAG_INT32 -> "double-long"; TAG_INT64 -> "long64"
+            TAG_UINT8 -> "unsigned"; TAG_UINT16 -> "long-unsigned"; TAG_UINT32 -> "double-long-unsigned"
+            else -> "long64-unsigned"
+        }
+        is DlmsData.Enum -> "enum"
+        is DlmsData.Float -> if (data.singlePrecision) "float32" else "float64"
+        is DlmsData.OctetString -> "octet-string"
+        is DlmsData.VisibleString -> "visible-string"
+        is DlmsData.Utf8String -> "utf8-string"
+        is DlmsData.Bcd -> "bcd"
+        is DlmsData.DateTime -> when (data.bytes.size) { 5 -> "date"; 4 -> "time"; else -> "date-time" }
+        is DlmsData.Array -> "array"
+        is DlmsData.Structure -> "structure"
+    }
+
     /** A-XDR length: one byte below 0x80, otherwise 0x8N followed by N big-endian bytes. */
     fun encodeLength(length: Int): ByteArray = when {
         length < 0x80 -> byteArrayOf(length.toByte())
@@ -172,5 +258,5 @@ fun roundPlain(value: java.math.BigDecimal, decimals: Int): String =
 
 fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
-private fun ByteArray.printableAsciiOrNull(): String? =
+internal fun ByteArray.printableAsciiOrNull(): String? =
     if (isNotEmpty() && all { it in 0x20..0x7E }) String(this, Charsets.US_ASCII) else null
