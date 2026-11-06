@@ -16,6 +16,22 @@ class SettingsRepository @Inject constructor(
     private val prefs: SharedPreferences =
         context.getSharedPreferences("meter_settings", Context.MODE_PRIVATE)
 
+    /**
+     * The meter passwords and keys, encrypted by [vault]. A file of its own so
+     * the backup rules can leave it out: the Keystore key never leaves this
+     * phone, so a restored copy couldn't be opened anyway.
+     */
+    private val keys: SharedPreferences =
+        context.getSharedPreferences("meter_keys", Context.MODE_PRIVATE)
+
+    private val vault = KeyVault()
+
+    init {
+        // Encrypt every client's keys left in plain text by older builds, not
+        // just those of whoever logs in next.
+        ClientProfile.entries.forEach(::getClientSecurity)
+    }
+
     fun saveSettings(
         account: String,
         password: String,
@@ -47,17 +63,35 @@ class SettingsRepository @Inject constructor(
         )
     }
 
-    /** A saved key as hex, accepting the older 16-character ASCII form. */
-    private fun stored(key: String): String =
-        prefs.getString(key, null)?.let(ClientSecurity::fromStored) ?: ClientSecurity.DEFAULT
+    /**
+     * A saved key as hex. Older builds kept the keys in plain text in
+     * `meter_settings`; such a value is encrypted into `meter_keys` and removed
+     * the first time it is read.
+     */
+    private fun stored(key: String): String {
+        keys.getString(key, null)?.let { sealed ->
+            return vault.open(key, sealed)?.let(ClientSecurity::fromStored) ?: ClientSecurity.DEFAULT
+        }
+        val plain = prefs.getString(key, null)?.let(ClientSecurity::fromStored) ?: return ClientSecurity.DEFAULT
+        keys.edit().putString(key, vault.seal(key, plain)).apply()
+        prefs.edit().remove(key).apply()
+        return plain
+    }
 
     fun saveClientSecurity(client: ClientProfile, security: ClientSecurity) {
         val p = client.name.lowercase()
+        val values = mapOf(
+            "${p}_auth_password" to security.authPassword,
+            "${p}_block_cipher_key" to security.blockCipherKey,
+            "${p}_authentication_key" to security.authenticationKey,
+            "${p}_broadcast_key" to security.broadcastKey,
+        )
+        keys.edit().apply {
+            values.forEach { (name, value) -> putString(name, vault.seal(name, value)) }
+            apply()
+        }
         prefs.edit().apply {
-            putString("${p}_auth_password", security.authPassword)
-            putString("${p}_block_cipher_key", security.blockCipherKey)
-            putString("${p}_authentication_key", security.authenticationKey)
-            putString("${p}_broadcast_key", security.broadcastKey)
+            values.keys.forEach(::remove)
             apply()
         }
     }
